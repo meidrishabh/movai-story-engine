@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MovAI Studio</title>
+    <link rel="stylesheet" href="/ui/styles.css" />
+    <style>
+      .workspace-series-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.workspace-series-header h2{margin:0 0 6px;font-size:28px}.workspace-series-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}.series-box{background:#fff;border:1px solid #e5e9ee;border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 12px 32px rgba(39,50,69,.08);transition:transform .15s,border .15s}.series-box:hover{transform:translateY(-3px);border-color:#b7afff}.series-box-art{height:100px;display:grid;place-items:center;font-size:36px;color:#fff;background:linear-gradient(135deg,#6d5dfc,#55d7c3)}.season-art{background:linear-gradient(135deg,#ee9b4b,#6d5dfc)}.episode-art{background:linear-gradient(135deg,#3f8cff,#55d7c3)}.series-box-body{padding:16px}.series-box-body h3{margin:0 0 6px;font-size:18px}.series-box-body p:not(.eyebrow){color:#6d7885;min-height:42px;margin:0 0 16px}.nested-episodes{padding-left:10px}
+      .workspace-layout.sidebar-hidden{grid-template-columns:1fr}.workspace-layout.sidebar-hidden .workspace-main{width:100%}
+      .sidebar{display:none}.main-content{width:100%;padding:34px 56px}
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">M</span><span>MovAI Studio</span></div>
+        <div class="sidebar-label">WORKSPACE</div>
+        <button class="nav-item active" data-view="projects">Projects</button>
+        <button class="nav-item" data-view="workflow">Episode workspace</button>
+        <div class="sidebar-footer">
+          <div class="status-dot"></div>
+          <div><strong>Local MVP</strong><small>Mock generation enabled</small></div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">CREATOR WORKSPACE</p>
+            <h1 id="page-title">Projects</h1>
+          </div>
+          <div class="topbar-actions">
+            <span class="api-pill" id="api-status">Checking API…</span>
+            <button class="button button-primary" id="new-project-button">+ New project</button>
+          </div>
+        </header>
+
+        <div id="toast" class="toast" role="status"></div>
+
+        <section id="projects-view" class="view">
+          <div class="hero-card">
+            <div>
+              <p class="eyebrow">AI DRAMA CREATOR</p>
+              <h2>Shape the story before you render it.</h2>
+              <p>Build a series, develop characters, plan scenes, and preview storyboard jobs from one local workspace.</p>
+            </div>
+            <div class="hero-orbit"><span>STORY</span><span>SCENE</span><span>SHOT</span></div>
+          </div>
+          <div class="section-heading"><div><p class="eyebrow">YOUR WORK</p><h2>Projects</h2></div><button class="button button-secondary" id="refresh-projects">Refresh</button></div>
+          <div id="project-grid" class="project-grid"></div>
+        </section>
+
+        <section id="workflow-view" class="view hidden">
+          <div class="breadcrumb"><button id="back-projects">Projects</button><span>/</span><strong id="workflow-project-name">Project</strong></div>
+          <div class="workspace-layout">
+            <aside class="workspace-sidebar">
+              <div class="panel-title"><span>Seasons</span><button class="icon-button" id="new-season-button">+</button></div>
+              <div id="series-list" class="list-stack"></div>
+              <div class="panel-title episode-title"><span>Episodes</span></div>
+              <div id="episode-list" class="list-stack"></div>
+            </aside>
+            <div class="workspace-main">
+              <div id="empty-workspace" class="empty-state"><div class="empty-icon">✦</div><h2>Select a series to begin</h2><p>Your episode planning workspace will appear here.</p></div>
+              <div id="editor-workspace" class="hidden">
+                <div class="workspace-header"><div><p class="eyebrow">SERIES</p><h2 id="series-heading">Series</h2><p id="series-premise" class="muted"></p></div><button class="button button-secondary" id="edit-series-button">Edit series</button></div>
+                <div class="stats-row" id="series-stats"></div>
+                <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="story">Story pipeline</button><button class="tab" data-tab="characters">Characters</button><button class="tab" data-tab="scenes">Scenes & storyboards</button><button class="tab" data-tab="jobs">Jobs</button></div>
+                <div id="overview-tab" class="tab-panel"></div>
+                <div id="story-tab" class="tab-panel hidden"></div>
+                <div id="characters-tab" class="tab-panel hidden"></div>
+                <div id="scenes-tab" class="tab-panel hidden"></div>
+                <div id="jobs-tab" class="tab-panel hidden"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="modal"><form method="dialog" id="modal-form"><div class="modal-header"><h2 id="modal-title">Create</h2><button type="button" class="icon-button" id="modal-close">×</button></div><div id="modal-body"></div><div class="modal-actions"><button type="button" class="button button-secondary" id="modal-cancel">Cancel</button><button type="submit" class="button button-primary" id="modal-submit" value="default">Save</button></div></form></dialog>
+    <script src="/ui/app.js?v=20261029-season-planning"></script>
+  </body>
+</html>
