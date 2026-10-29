@@ -67,8 +67,21 @@ MovAi/
 │   ├── requirements.txt
 │   └── ARCHITECTURE.md
 ├── frontend/                          # Current UI
+├── docs/                               # Design, API, operations, and project documentation
 └── README.md
 ```
+
+## Documentation
+
+- [High-Level Design](docs/HLD.md)
+- [Low-Level Design](docs/LLD.md)
+- [API Reference](docs/API_REFERENCE.md)
+- [Database ERD](docs/DATABASE_ERD.md)
+- [Story Processing Specification](docs/STORY_PROCESSING_SPEC.md)
+- [Testing Strategy](docs/TESTING_STRATEGY.md)
+- [Deployment and Operations](docs/DEPLOYMENT_OPERATIONS.md)
+- [Architecture Decisions](docs/ARCHITECTURE_DECISIONS.md)
+- [Claude Handoff Checkpoint](docs/MOVAI_CLAUDE_HANDOFF_CHECKPOINT.md)
 
 ## Database
 
