@@ -73,6 +73,7 @@ MovAi/
 
 ## Documentation
 
+- [Product Pitch](pitch.md)
 - [High-Level Design](docs/HLD.md)
 - [Low-Level Design](docs/LLD.md)
 - [API Reference](docs/API_REFERENCE.md)
