@@ -2,7 +2,7 @@
 
 ## Turning stories into production-ready visual worlds
 
-MovAI is an AI-assisted story production platform that helps creators transform a complete story—such as a novel, screenplay, article, or original idea—into a structured plan for an episodic visual production.
+MovAI is an end-to-end AI-assisted story and visual production platform that transforms novels, screenplays, articles, advertisements, short-video ideas, reels, and original concepts into structured, production-ready visual content.
 
 It is designed for creators who have a story to tell but need help turning that story into consistent characters, scenes, episodes, and eventually images and video.
 
@@ -85,9 +85,28 @@ The platform is designed for novels, full scripts, and other substantial source 
 - Education and training-content producers
 - Creative agencies developing story-based campaigns
 
-## Product roadmap
+## Complete product scope
 
-### Phase 1: Story intelligence
+MovAI brings the entire creative journey into one connected workspace:
+
+- Ingest novels, scripts, articles, advertisements, short-video concepts, reels, and other written or visual story inputs.
+- Understand the complete source and preserve narrative context, timelines, characters, relationships, locations, objects, costumes, and possessions.
+- Convert source material into scenes, dialogue, story beats, a master script, storyboards, and production notes.
+- Estimate duration and intelligently divide a story into seasons, episodes, short films, advertisements, or reels according to the creator's goals.
+- Generate and maintain consistent character faces, bodies, costumes, props, vehicles, locations, and visual styles.
+- Produce image sequences and video scenes while preserving continuity across the complete production.
+- Support manga and illustrated-story workflows as an additional visual format.
+- Provide review, approval, revision, and asset-management workflows for creators and studios.
+
+## Cost-efficient production architecture
+
+MovAI is designed to support cost-efficient local and studio deployment. When production workloads are moved to NVIDIA GPU infrastructure, models such as Wan can be used for video generation while open and local models handle suitable story, image, and processing tasks.
+
+This architecture gives creators flexibility to balance quality, speed, privacy, and cost instead of depending entirely on expensive per-generation cloud services.
+
+## Product capabilities
+
+### Story intelligence
 
 - Story ingestion and validation
 - Long-form context preservation
@@ -96,7 +115,7 @@ The platform is designed for novels, full scripts, and other substantial source 
 - Master script generation
 - Duration estimation
 
-### Phase 2: Production planning
+### Production planning
 
 - Season and episode generation
 - Scene and dialogue breakdown
@@ -104,7 +123,7 @@ The platform is designed for novels, full scripts, and other substantial source 
 - Continuity conflict detection
 - Review and approval workflows
 
-### Phase 3: Visual creation
+### Visual creation
 
 - Character reference generation
 - Costume and possession references
@@ -112,22 +131,9 @@ The platform is designed for novels, full scripts, and other substantial source 
 - Video generation workflows
 - Production asset management
 
-## Current MVP status
+## Product positioning
 
-The current MVP foundation includes:
-
-- Project, series, season, and episode hierarchy
-- Story upload and text input flows
-- Markdown and text-based PDF processing
-- Scanned-PDF rejection without OCR
-- Story chunking with source-page context
-- Semantic search and local embeddings
-- Story complexity analysis
-- Modular backend and database foundation
-- Structured AI-provider interface
-- Initial UI workflow
-
-The next major milestone is connecting a production LLM to generate meaningful story entities, timelines, master scripts, and episode plans.
+MovAI is not just an image or video generator. It is the intelligence and continuity layer that understands the story first, prepares a consistent production plan, and carries that context through every downstream creative format.
 
 ## Business opportunity
 
