@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    # Keep dependency update pull requests paused until CI checks are available.
+    # Set this to a positive number after GitHub Actions validation is ready.
+    open-pull-requests-limit: 0
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
