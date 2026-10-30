@@ -323,31 +323,6 @@
 .tile-value {
   font: 500 22px var(--font-mono);
 }
-.segmented {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.segmented label {
-  padding: 7px 14px;
-  cursor: pointer;
-  color: var(--muted);
-}
-.segmented input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.segmented label:has(input:checked) {
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-.segmented label:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 .beat {
   display: grid;
   gap: 8px;

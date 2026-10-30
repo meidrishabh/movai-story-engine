@@ -3,9 +3,9 @@ import type { ReactNode } from 'react'
 import { Badge, Button, Card, Empty, ErrorNote, Loading, Notice, PageHeader } from '../../shared/ui'
 import { formatDuration, plural } from '../../shared/lib/format'
 import { useSeriesId } from '../series/api'
-import { useAdaptations, useBeatDecision, useGenerate, useSelectMain } from './api'
+import { useAdaptations, useBeatDecision, useGenerate } from './api'
 import { BeatRow } from './BeatRow'
-import type { AdaptationItem, BeatAction, BeatItem, MainKind } from './types'
+import type { AdaptationItem, BeatAction, BeatItem } from './types'
 
 const beatKey = (item: BeatItem) => `${item.unit}:${item.beat ?? 'unit'}`
 
@@ -13,7 +13,6 @@ export default function AdaptationPage() {
   const seriesId = useSeriesId()
   const adaptations = useAdaptations(seriesId)
   const decide = useBeatDecision(seriesId)
-  const select = useSelectMain(seriesId)
   const generate = useGenerate(seriesId)
 
   if (adaptations.isPending) return <Loading />
@@ -23,7 +22,6 @@ export default function AdaptationPage() {
   const full = items.find((i) => i.kind === 'full')
   const concentrated = items.find((i) => i.kind === 'concentrated')
   const extras = items.filter((i) => i.group === 'extra')
-  const main: MainKind = concentrated?.selected ? 'concentrated' : 'full'
 
   if (!full?.available) {
     return (
@@ -45,7 +43,7 @@ export default function AdaptationPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Adaptation" subtitle="The whole story is always kept. The concentrated version is the same story without filler, and every cut can be undone." />
+      <PageHeader title="Adaptation" subtitle="Episodes are planned from the concentrated version: the same story without filler. Every cut can be undone." />
 
       <div className="tiles">
         <Tile label="Whole adaptation" value={formatDuration(full.duration_seconds)} />
@@ -55,30 +53,6 @@ export default function AdaptationPage() {
           note={concentrated?.available ? `${formatDuration(concentrated.saved_seconds)} of filler removed` : 'Not generated yet'}
         />
       </div>
-
-      <Card>
-        <div className="row row-between">
-          <div>
-            <h2>Plan episodes from</h2>
-            <p className="muted">Episode plans follow this version.</p>
-          </div>
-          <div className="segmented" role="radiogroup" aria-label="Plan episodes from">
-            {(['full', 'concentrated'] as const).map((kind) => (
-              <label key={kind}>
-                <input
-                  type="radio"
-                  name="main"
-                  checked={main === kind}
-                  disabled={select.isPending || (kind === 'concentrated' && !concentrated?.available)}
-                  onChange={() => select.mutate(kind)}
-                />
-                {kind === 'full' ? 'Whole' : 'Concentrated'}
-              </label>
-            ))}
-          </div>
-        </div>
-        {select.isError && <ErrorNote error={select.error} />}
-      </Card>
 
       {decide.isError && <ErrorNote error={decide.error} />}
       {decide.isSuccess && decide.data.affected_episodes.length > 0 && (

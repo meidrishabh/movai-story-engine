@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '../../shared/api/client'
 import { plansKeys } from '../plans/api'
-import type { AdaptationItem, BeatAction, BeatDecisionResult, MainKind } from './types'
+import type { AdaptationItem, BeatAction, BeatDecisionResult } from './types'
 
 export const adaptationKeys = {
   all: (seriesId: string) => ['series', seriesId, 'adaptations'] as const,
@@ -33,14 +33,6 @@ export function useBeatDecision(seriesId: string) {
   return useMutation({
     mutationFn: (input: { unit: number; beat: number | null; action: BeatAction }) =>
       api.put<BeatDecisionResult>(`/series/${seriesId}/adaptations/concentrated/beats`, input),
-    onSuccess: refresh,
-  })
-}
-
-export function useSelectMain(seriesId: string) {
-  const refresh = useRefresh(seriesId)
-  return useMutation({
-    mutationFn: (main: MainKind) => api.put(`/series/${seriesId}/adaptation-selection`, { main }),
     onSuccess: refresh,
   })
 }

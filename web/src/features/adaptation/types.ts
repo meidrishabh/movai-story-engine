@@ -1,5 +1,4 @@
 export type AdaptationKind = 'full' | 'concentrated' | 'trailer' | 'teaser'
-export type MainKind = 'full' | 'concentrated'
 export type AdaptationStatus = 'not_generated' | 'generating' | 'ready' | 'failed'
 
 /** One beat the filler review looked at. `why` explains why a disputed beat stayed in. */
