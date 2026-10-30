@@ -11,6 +11,7 @@ from app.providers.llm_base import LLMProviderError
 from app.providers.llm_factory import get_judge_provider, get_llm_provider
 from app.repositories.analysis_repository import list_source_chunks, update_analysis_progress
 from app.services.adaptation_service import build_full, detect_filler
+from app.services.appearance_service import build_all_looks
 from app.services.continuity_service import build_continuity
 from app.services.episode_plan_service import build_episode_plan
 from app.services.llm_stage import LLMStageClient
@@ -22,7 +23,7 @@ from app.services.timeline_service import build_timeline
 log = logging.getLogger("analysis_pipeline")
 
 # (stage name, progress when finished); extraction already brought the run to 85.
-PROGRESS = {"timeline": 88, "continuity": 92, "master_script": 95, "adaptations": 97, "episode_plan": 99}
+PROGRESS = {"timeline": 87, "continuity": 90, "appearance": 93, "master_script": 95, "adaptations": 97, "episode_plan": 99}
 
 
 def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], None] | None = None) -> dict:
@@ -51,6 +52,13 @@ def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], No
     done("timeline", summary["timeline"])
     summary["continuity"] = build_continuity(db, client, run_id, series_id, snapshot, profile, story_format)
     done("continuity", summary["continuity"])
+    try:  # reference sheets are needed for visuals later, but the story pipeline works without them
+        summary["appearance"] = build_all_looks(db, client, run_id, series_id, profile, story_format)
+    except (LLMProviderError, PermanentJobError) as error:
+        db.rollback()
+        summary["appearance"] = {"skipped": str(error)[:200]}
+        log.warning("Appearance analysis skipped: %s", error)
+    done("appearance", summary["appearance"])
     summary["master_script"] = build_master_script(db, client, run_id, series_id, source_id, snapshot, profile, story_format)
     done("master_script", summary["master_script"])
     script_id = UUID(summary["master_script"]["master_script_id"])

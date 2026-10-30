@@ -211,6 +211,59 @@ Input: "kind" (trailer or teaser), "target_seconds", "units" (numbered, with tit
 JSON shape:
 {"title": "", "logline": "", "segments": [{"unit": 1, "description": "", "voiceover": null, "seconds": 8}]}"""
 
+APPEARANCE_SYSTEM_PROMPT = _DATA_NOTE + """You write a character's visual reference sheet from what the story text says about them, so artists and image models can draw the same person every time.
+
+Input: "character" (name, aliases, short description) and "passages" (sentences from the story that mention them, in story order).
+
+Rules:
+- Use ONLY what the passages state or directly imply. Never invent looks. A field the text does not support is null (or an empty list). It is far better to leave a field empty than to guess.
+- "age": stated or implied age or life stage ("about forty", "an old man"), else null.
+- "face_and_body": build, height, face, hair, eyes, skin as described, else null.
+- "clothing": what they usually wear, else null. "costumes": distinct outfits worn at a particular point ("when": that point in the story); only when the text names or describes more than one, or a notable one.
+- "distinctive_features": scars, limp, accent-defining gestures, props always carried; anything that makes them recognisable.
+- "color_palette": colours the text ties to this character (clothes, hair, eyes), as plain words.
+- "voice": how they speak (tone, manner) if described, else null.
+- "description": one or two sentences summarising how they look and carry themselves, using only the above.
+- "evidence": up to 4 short quotes from the passages (under 20 words each) that back the details you gave.
+- "missing": which of age, face_and_body, clothing, distinctive_features, voice the text says nothing about.
+
+JSON shape:
+{"description": null, "age": null, "face_and_body": null, "clothing": null, "distinctive_features": null, "color_palette": [],
+ "voice": null, "costumes": [{"name": "", "description": "", "colors": [], "accessories": [], "when": null}],
+ "evidence": [], "missing": []}"""
+
+PLACE_LOOK_SYSTEM_PROMPT = _DATA_NOTE + """You write a visual reference for a place in a story, from what the story text says, so artists and image models can draw the same place every time.
+
+Input: "place" (name, aliases, short description) and "passages" (sentences from the story that mention it, in story order).
+
+Rules:
+- Use ONLY what the passages state or directly imply. Never invent looks. A field the text does not support is null (or an empty list). Leaving a field empty is far better than guessing.
+- "form": layout, size, architecture, materials, landscape as described, else null.
+- "atmosphere": mood, light, weather, era or time of day the text gives, else null.
+- "distinctive_features": landmarks, signature objects or features that make it recognisable.
+- "color_palette": colours the text ties to it, as plain words.
+- "description": one or two sentences summarising how it looks, using only the above.
+- "evidence": up to 4 short quotes from the passages (under 20 words each) that back the details you gave.
+
+JSON shape:
+{"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
+
+OBJECT_LOOK_SYSTEM_PROMPT = _DATA_NOTE + """You write a visual reference for an object in a story, from what the story text says, so artists and image models can draw the same object every time.
+
+Input: "object" (name, aliases, short description) and "passages" (sentences from the story that mention it, in story order).
+
+Rules:
+- Use ONLY what the passages state or directly imply. Never invent looks. A field the text does not support is null (or an empty list). Leaving a field empty is far better than guessing.
+- "form": shape, size, material as described, else null.
+- "atmosphere": its condition, age or wear as described, else null.
+- "distinctive_features": marks, inscriptions, parts or details that make it recognisable.
+- "color_palette": colours the text ties to it, as plain words.
+- "description": one or two sentences summarising how it looks, using only the above.
+- "evidence": up to 4 short quotes from the passages (under 20 words each) that back the details you gave.
+
+JSON shape:
+{"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
+
 STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
@@ -222,6 +275,9 @@ STAGE_PROMPTS = {
     "filler_judge": (FILLER_JUDGE_SYSTEM_PROMPT, "filler-judge-v1"),
     "episode_repair": (EPISODE_REPAIR_SYSTEM_PROMPT, "episode-repair-v1"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
+    "appearance": (APPEARANCE_SYSTEM_PROMPT, "appearance-v1"),
+    "place_look": (PLACE_LOOK_SYSTEM_PROMPT, "place-look-v1"),
+    "object_look": (OBJECT_LOOK_SYSTEM_PROMPT, "object-look-v1"),
 }
 
 

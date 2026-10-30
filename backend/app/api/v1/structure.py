@@ -213,3 +213,41 @@ def get_breakdown(episode_id: UUID, db: Session = Depends(get_db)):
             {k: (float(v) if k == "duration_seconds" and v is not None else v) for k, v in shot.items() if k != "scene_id"})
     return {"count": len(scenes), "stale": episode["breakdown_stale"], "continuity_notes": episode["continuity_notes"],
             "items": [{**dict(s), "shots": by_scene.get(str(s["id"]), [])} for s in scenes]}
+
+
+@router.get("/series/{series_id}/breakdown")
+def breakdown_overview(series_id: UUID, db: Session = Depends(get_db)):
+    """Every approved episode with its breakdown state, so one screen can drive the whole series."""
+    _series_owned(db, series_id)
+    rows = db.execute(
+        text("""SELECT e.id, e.episode_number, e.title, e.target_duration_seconds, e.breakdown_stale,
+                       (SELECT count(*) FROM scenes sc WHERE sc.episode_id = e.id) AS scene_count,
+                       (SELECT COALESCE(sum(sh.duration_seconds), 0) FROM shots sh JOIN scenes sc ON sc.id = sh.scene_id
+                         WHERE sc.episode_id = e.id) AS shot_seconds,
+                       (SELECT j.status FROM generation_jobs j WHERE j.job_type = 'scene_breakdown'
+                         AND j.request_metadata ->> 'episode_id' = e.id::text ORDER BY j.created_at DESC LIMIT 1) AS job_status,
+                       (SELECT j.error_summary FROM generation_jobs j WHERE j.job_type = 'scene_breakdown'
+                         AND j.request_metadata ->> 'episode_id' = e.id::text ORDER BY j.created_at DESC LIMIT 1) AS job_error
+                FROM episodes e WHERE e.series_id = :s ORDER BY e.episode_number"""),
+        {"s": str(series_id)}).mappings().all()
+    items = [{**dict(r), "shot_seconds": float(r["shot_seconds"])} for r in rows]
+    return {"count": len(items), "items": items}
+
+
+@router.post("/series/{series_id}/breakdown", status_code=202)
+def queue_series_breakdown(series_id: UUID, db: Session = Depends(get_db)):
+    """Queue a breakdown for every episode that has none or whose breakdown is out of date."""
+    _series_owned(db, series_id)
+    episodes = db.execute(
+        text("""SELECT e.id FROM episodes e WHERE e.series_id = :s
+                AND (e.breakdown_stale OR NOT EXISTS (SELECT 1 FROM scenes sc WHERE sc.episode_id = e.id))
+                AND NOT EXISTS (SELECT 1 FROM generation_jobs j WHERE j.job_type = 'scene_breakdown'
+                                AND j.status IN ('queued', 'running') AND j.request_metadata ->> 'episode_id' = e.id::text)
+                ORDER BY e.episode_number"""), {"s": str(series_id)}).scalars().all()
+    for episode_id in episodes:
+        db.execute(
+            text("""INSERT INTO generation_jobs (job_type, status, provider, request_metadata)
+                    VALUES ('scene_breakdown', 'queued', 'llm', CAST(:meta AS jsonb))"""),
+            {"meta": json.dumps({"episode_id": str(episode_id)})})
+    db.commit()
+    return {"queued": len(episodes)}

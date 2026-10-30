@@ -20,6 +20,7 @@ from app.services.analysis_pipeline import run_structure_stages
 from app.services.episode_plan_service import build_episode_plan
 from app.services.episode_repair_service import repair_episodes
 from app.services.llm_stage import LLMStageClient
+from app.services.appearance_service import generate_for_series as generate_appearance
 from app.services.scene_breakdown_service import build_scene_breakdown
 from app.workers.embedding_job import process_embedding_job
 from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
@@ -134,7 +135,9 @@ def run_adaptation(db, job):
     run_id, profile, story_format = adaptation_context(db, series_id)
     client = LLMStageClient(get_llm_provider(), get_judge_provider())
     try:
-        if kind == "repair":  # a user changed the filler cut; refresh the episodes around it
+        if kind == "appearance":  # regenerate the character reference sheets
+            result = generate_appearance(db, client, run_id, series_id, profile, story_format)
+        elif kind == "repair":  # a user changed the filler cut; refresh the episodes around it
             result = repair_episodes(db, client, run_id, series_id, profile, story_format)
         elif kind == "concentrated":
             script = latest_master_script(db, series_id)

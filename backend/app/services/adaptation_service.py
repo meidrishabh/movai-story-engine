@@ -68,10 +68,20 @@ def run_context(db: Session, series_id: UUID) -> tuple[UUID, str, str]:
     return run["id"], str(run["profile"]), detect_story_format(list_source_chunks(db, run["source_id"]))
 
 
+def _current_cut(db: Session, series_id: UUID) -> dict | None:
+    """The concentrated adaptation's content, when it is ready and was built from the latest master script."""
+    script = latest_master_script(db, series_id)
+    if script is None:
+        return None
+    return db.execute(
+        text("""SELECT content FROM adaptations WHERE series_id = :s AND kind = 'concentrated' AND status = 'ready'
+                AND master_script_id = :m"""), {"s": str(series_id), "m": str(script["id"])}).scalar()
+
+
 def selected_main(db: Session, series_id: UUID) -> str:
-    kind = db.execute(text("SELECT kind FROM adaptations WHERE series_id = :s AND selected AND kind IN ('full', 'concentrated')"),
-                      {"s": str(series_id)}).scalar()
-    return kind or "full"
+    """Episodes are always planned from the cut (filler removed, every cut restorable); the whole story is the
+    fallback until the cut exists or when it was built from an older master script."""
+    return "concentrated" if _current_cut(db, series_id) is not None else "full"
 
 
 def build_full(db: Session, series_id: UUID, master_script_id) -> dict:
@@ -305,10 +315,9 @@ def effective_units(db: Session, series_id: UUID, master_script_id, kind: str) -
 
 
 def removed_beats(db: Session, series_id: UUID) -> list[dict]:
-    """Beats the scene breakdown must skip when the concentrated adaptation is selected."""
-    row = db.execute(text("""SELECT content FROM adaptations WHERE series_id = :s AND kind = 'concentrated'
-                             AND selected AND status = 'ready'"""), {"s": str(series_id)}).mappings().first()
-    return [] if row is None else [i for i in row["content"].get("removed", []) if i.get("beat_text")]
+    """Beats the scene breakdown must skip: the ones removed from the current cut."""
+    content = _current_cut(db, series_id)
+    return [] if content is None else [i for i in content.get("removed", []) if i.get("beat_text")]
 
 
 def build_highlight(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID, kind: str,

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.adaptations import router as adaptations_router
+from app.api.v1.appearance import router as appearance_router
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.analysis_results import router as analysis_results_router
 from app.api.v1.catalog import router as catalog_router
@@ -18,6 +19,7 @@ from app.api.v1.structure import router as structure_router
 
 router = APIRouter()
 router.include_router(adaptations_router)
+router.include_router(appearance_router)
 router.include_router(analysis_router)
 router.include_router(analysis_results_router)
 router.include_router(catalog_router)
