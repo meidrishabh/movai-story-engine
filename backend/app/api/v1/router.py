@@ -4,6 +4,7 @@ from app.api.v1.analysis import router as analysis_router
 from app.api.v1.analysis_results import router as analysis_results_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.characters import router as characters_router
+from app.api.v1.entities import router as entities_router
 from app.api.v1.seasons import router as seasons_router
 from app.api.v1.season_story import router as season_story_router
 from app.api.v1.system import router as system_router
@@ -18,6 +19,7 @@ router.include_router(analysis_router)
 router.include_router(analysis_results_router)
 router.include_router(catalog_router)
 router.include_router(characters_router)
+router.include_router(entities_router)
 router.include_router(seasons_router)
 router.include_router(season_story_router)
 router.include_router(system_router)

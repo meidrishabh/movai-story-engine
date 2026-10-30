@@ -41,7 +41,7 @@ def commit_analysis_result(
                    VALUES (:series_id, :name, :role, :personality, :story_role,
                            'extracted', CAST(:source_unit_ids AS uuid[]),
                            :extraction_confidence, 'extracted')
-                   ON CONFLICT (series_id, name) DO UPDATE SET
+                   ON CONFLICT (series_id, name, disambiguation) DO UPDATE SET
                        role = EXCLUDED.role, personality = EXCLUDED.personality,
                        story_role = EXCLUDED.story_role,
                        source_unit_ids = EXCLUDED.source_unit_ids,
@@ -88,7 +88,7 @@ def commit_analysis_result(
                    VALUES (:series_id, :object_type, :name, :description,
                            :distinctive_features, :state_notes,
                            CAST(:source_unit_ids AS uuid[]))
-                   ON CONFLICT (series_id, object_type, name) DO UPDATE SET
+                   ON CONFLICT (series_id, object_type, name, disambiguation) DO UPDATE SET
                        description = EXCLUDED.description,
                        distinctive_features = EXCLUDED.distinctive_features,
                        state_notes = EXCLUDED.state_notes,

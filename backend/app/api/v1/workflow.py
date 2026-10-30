@@ -11,7 +11,7 @@ from app.providers.mock import MockStoryboardProvider
 from app.repositories.analysis_repository import mark_analysis_running, mark_analysis_succeeded
 from app.schemas.workflow import ApprovalCreate
 from app.workers.embedding_job import process_embedding_job
-from app.workers.story_analysis_worker import process_entity_extraction
+from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
 
 
 router = APIRouter(prefix="/api/v1", tags=["workflow"])
@@ -68,15 +68,8 @@ def run_mock_job(job_id: UUID, db: Session = Depends(get_db)):
 
     if str(job["job_type"]) == "story_analysis" and analysis_run_id:
         output = process_entity_extraction(db, UUID(analysis_run_id))
-        completed = db.execute(
-            text("""UPDATE generation_jobs SET status = 'succeeded', progress = 100,
-                completed_at = now() WHERE id = :job_id
-                RETURNING id, job_type, status, progress, provider, provider_model,
-                          created_at, started_at, completed_at"""),
-            {"job_id": str(job_id)},
-        ).mappings().one()
-        db.commit()
-        return {"job": dict(completed), "analysis_output": output}
+        completed = complete_story_analysis(db, job_id, metadata)
+        return {"job": completed, "analysis_output": output}
 
     provider_result = MockStoryboardProvider().generate(
         GenerationRequest(

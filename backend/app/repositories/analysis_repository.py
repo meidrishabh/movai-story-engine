@@ -101,6 +101,65 @@ def record_complexity_output(db: Session, run_id: UUID, complexity: dict):
     ).mappings().one()
 
 
+def list_source_chunks(db: Session, source_id: UUID) -> list[dict]:
+    rows = db.execute(
+        text(
+            """SELECT id, narrative_position, chapter_title, page_start, page_end, content_text
+               FROM story_chunks WHERE story_source_id = :source_id
+               ORDER BY narrative_position"""
+        ),
+        {"source_id": str(source_id)},
+    ).mappings().all()
+    return [
+        {
+            "chunk_id": str(row["id"]),
+            "narrative_position": row["narrative_position"],
+            "chapter_title": row["chapter_title"],
+            "page_start": row["page_start"],
+            "page_end": row["page_end"],
+            "text": row["content_text"],
+        }
+        for row in rows
+    ]
+
+
+def load_batches(db: Session, run_id: UUID, stage_name: str) -> dict[str, dict]:
+    rows = db.execute(
+        text(
+            """SELECT batch_key, parsed, usage, model, prompt_version
+               FROM analysis_batches WHERE analysis_run_id = :run_id AND stage_name = :stage"""
+        ),
+        {"run_id": str(run_id), "stage": stage_name},
+    ).mappings().all()
+    return {row["batch_key"]: dict(row) for row in rows}
+
+
+def save_batch(db: Session, run_id: UUID, stage_name: str, batch_key: str, chunk_ids: list[str],
+               response, ) -> None:
+    db.execute(
+        text(
+            """INSERT INTO analysis_batches (analysis_run_id, stage_name, batch_key, chunk_ids,
+                   raw_response, parsed, usage, model, prompt_version)
+               VALUES (:run_id, :stage, :key, CAST(:chunk_ids AS uuid[]), :raw,
+                       CAST(:parsed AS jsonb), CAST(:usage AS jsonb), :model, :prompt_version)
+               ON CONFLICT (analysis_run_id, stage_name, batch_key) DO NOTHING"""
+        ),
+        {
+            "run_id": str(run_id), "stage": stage_name, "key": batch_key,
+            "chunk_ids": "{" + ",".join(chunk_ids) + "}", "raw": response.raw,
+            "parsed": json.dumps(response.payload), "usage": json.dumps(response.usage_metadata),
+            "model": response.model, "prompt_version": response.prompt_version,
+        },
+    )
+
+
+def update_analysis_progress(db: Session, run_id: UUID, stage: str, progress: int):
+    db.execute(
+        text("UPDATE analysis_runs SET current_stage = :stage, progress = :progress WHERE id = :run_id"),
+        {"run_id": str(run_id), "stage": stage, "progress": progress},
+    )
+
+
 def mark_analysis_running(db: Session, run_id: UUID):
     db.execute(
         text(

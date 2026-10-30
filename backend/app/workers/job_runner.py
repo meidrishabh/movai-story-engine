@@ -1,0 +1,171 @@
+"""Postgres-backed job runner.
+
+Run with:  python -m app.workers.job_runner [--once]
+"""
+import argparse
+import logging
+import time
+from uuid import UUID
+
+from sqlalchemy import text
+
+from app.core.errors import PermanentJobError
+from app.db import SessionLocal
+from app.repositories.analysis_repository import mark_analysis_running
+from app.workers.embedding_job import process_embedding_job
+from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
+
+log = logging.getLogger("job_runner")
+
+POLL_SECONDS = 2
+BACKOFF_SECONDS = 30
+STALE_AFTER_MINUTES = 30
+
+# Only job types with a handler below are claimed; the rest stay queued.
+CLAIM_SQL = """
+UPDATE generation_jobs
+SET status = 'running', attempt_count = attempt_count + 1,
+    started_at = COALESCE(started_at, now()), heartbeat_at = now(),
+    error_summary = NULL
+WHERE id = (
+    SELECT id FROM generation_jobs
+    WHERE status = 'queued'
+      AND (run_after IS NULL OR run_after <= now())
+      AND (job_type = 'embedding_generation'
+           OR (job_type = 'story_analysis'
+               AND request_metadata ->> 'analysis_run_id' IS NOT NULL))
+    ORDER BY created_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+)
+RETURNING id, job_type, attempt_count, max_attempts, request_metadata
+"""
+
+
+def claim_next(db):
+    job = db.execute(text(CLAIM_SQL)).mappings().first()
+    db.commit()
+    return job
+
+
+def touch_heartbeat(db, job_id: UUID):
+    db.execute(
+        text("UPDATE generation_jobs SET heartbeat_at = now() WHERE id = :job_id"),
+        {"job_id": str(job_id)},
+    )
+    db.commit()
+
+
+def recover_stale(db):
+    """Requeue jobs whose worker stopped heartbeating; fail those out of attempts."""
+    params = {"minutes": STALE_AFTER_MINUTES}
+    stale = "status = 'running' AND heartbeat_at < now() - make_interval(mins => :minutes)"
+    db.execute(
+        text(
+            f"""UPDATE generation_jobs SET status = 'failed', completed_at = now(),
+                    error_summary = 'Worker heartbeat expired'
+                WHERE {stale} AND attempt_count >= max_attempts"""
+        ),
+        params,
+    )
+    requeued = db.execute(
+        text(
+            f"""UPDATE generation_jobs SET status = 'queued',
+                    error_summary = 'Worker heartbeat expired; requeued'
+                WHERE {stale} RETURNING id"""
+        ),
+        params,
+    ).all()
+    db.commit()
+    for row in requeued:
+        log.warning("Requeued stale job %s", row[0])
+
+
+def run_embedding(db, job):
+    while True:
+        result = process_embedding_job(db, job["id"])
+        if result["status"] == "succeeded":
+            return
+        touch_heartbeat(db, job["id"])
+
+
+def run_story_analysis(db, job):
+    metadata = job["request_metadata"]
+    run_id = UUID(metadata["analysis_run_id"])
+    mark_analysis_running(db, run_id)
+    db.commit()
+    process_entity_extraction(db, run_id, on_progress=lambda: touch_heartbeat(db, job["id"]))
+    complete_story_analysis(db, job["id"], metadata)
+
+
+HANDLERS = {
+    "embedding_generation": run_embedding,
+    "story_analysis": run_story_analysis,
+}
+
+
+def fail_or_retry(db, job, error: Exception):
+    db.rollback()
+    summary = f"{type(error).__name__}: {error}"[:1000]
+    if isinstance(error, PermanentJobError) or job["attempt_count"] >= job["max_attempts"]:
+        db.execute(
+            text(
+                """UPDATE generation_jobs SET status = 'failed', completed_at = now(),
+                       error_summary = :summary WHERE id = :job_id"""
+            ),
+            {"job_id": str(job["id"]), "summary": summary},
+        )
+        run_id = (job["request_metadata"] or {}).get("analysis_run_id")
+        if run_id:
+            db.execute(
+                text(
+                    """UPDATE analysis_runs SET status = 'failed', error_message = :summary,
+                           completed_at = now() WHERE id = :run_id"""
+                ),
+                {"run_id": run_id, "summary": summary},
+            )
+        log.error("Job %s failed permanently: %s", job["id"], summary)
+    else:
+        db.execute(
+            text(
+                """UPDATE generation_jobs SET status = 'queued', error_summary = :summary,
+                       run_after = now() + make_interval(secs => :delay)
+                   WHERE id = :job_id"""
+            ),
+            {
+                "job_id": str(job["id"]),
+                "summary": summary,
+                "delay": BACKOFF_SECONDS * job["attempt_count"],
+            },
+        )
+        log.warning("Job %s failed (attempt %s), will retry: %s", job["id"], job["attempt_count"], summary)
+    db.commit()
+
+
+def run_job(db, job):
+    log.info("Running %s job %s (attempt %s)", job["job_type"], job["id"], job["attempt_count"])
+    try:
+        HANDLERS[str(job["job_type"])](db, job)
+    except Exception as error:  # noqa: BLE001 - any failure goes through retry handling
+        fail_or_retry(db, job, error)
+
+
+def run(once: bool = False):
+    while True:
+        with SessionLocal() as db:
+            recover_stale(db)
+            job = claim_next(db)
+            if job is None:
+                if once:
+                    return
+                time.sleep(POLL_SECONDS)
+                continue
+            run_job(db, job)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="MovAI job runner")
+    parser.add_argument("--once", action="store_true", help="exit when the queue is empty")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    run(once=args.once)
