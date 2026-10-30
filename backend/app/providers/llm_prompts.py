@@ -130,7 +130,8 @@ Input: "episode" (title, synopsis, target_seconds), "units" (the story units in 
 For each scene: title, description, location, time_of_day, environment_notes, the characters present, "dialogue" (character, line, optional delivery) and "shots".
 - Dialogue: use lines from the passages where they exist. Where the source has no spoken lines for a moment, write short in-character dialogue only if the scene needs it, faithful to the story.
 - Shots: each is ONE continuous camera setup lasting about 3-10 seconds, so a scene lasting a minute has roughly 6-15 shots. Each has a concrete visual description, "camera" (framing / movement, for example "wide establishing", "slow push-in on face"), duration_seconds and the characters visible.
-- Use known character and location names exactly. Scene and shot durations should add up near the episode target_seconds.
+- Use known character and location names exactly.
+- Length: each unit has "seconds" of screen time. Cover every unit with one or more scenes whose shot durations add up to roughly that unit's seconds (within 15%), so a 180-second unit needs about 25-40 shots. All scenes together must come close to the episode target_seconds. Fill the time with the unit's beats, reactions, travel, establishing and cutaway shots, never by inventing events.
 - Do not add events that are not in the units.
 - "omit" lists beats that were cut from this adaptation as filler: leave them out of the scenes.
 
@@ -173,7 +174,7 @@ STAGE_PROMPTS = {
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v2"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v2"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v3"),
     "filler": (FILLER_SYSTEM_PROMPT, "filler-v2"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }

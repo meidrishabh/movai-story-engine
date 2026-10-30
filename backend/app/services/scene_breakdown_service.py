@@ -36,35 +36,41 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
     if not units:
         raise PermanentJobError("Episode has no story units to break down")
 
-    wanted = {ref.get("chunk_id") for unit in units for ref in unit["source_reference"] or []}
-    chunks = [c for c in list_source_chunks(db, run["source_id"]) if c["chunk_id"] in wanted]
-    words = 0
-    kept = []
-    for chunk in chunks:  # keep the prompt inside one batch worth of text
-        words += len(chunk["text"].split())
-        if words > settings.analysis_batch_words * 2 and kept:
-            break
-        kept.append(chunk)
-
+    all_chunks = list_source_chunks(db, run["source_id"])
+    story_format = detect_story_format(all_chunks)
     names = {k: [r[0] for r in db.execute(
         text(f"SELECT name FROM {t} WHERE series_id = :s AND merged_into_id IS NULL AND review_status <> 'stale'"),
         {"s": str(episode["series_id"])})] for k, t in (("characters", "characters"), ("locations", "locations"))}
-    request = LLMAnalysisRequest(
-        task="scene_breakdown", profile=str(run["profile"]), context_chunks=kept, known_entities={},
-        story_format=detect_story_format(chunks or kept),
-        task_input={
-            "episode": {"title": episode["title"], "synopsis": episode["synopsis"],
-                        "target_seconds": episode["target_duration_seconds"]},
-            "units": [{"number": u["sequence_number"], "title": u["title"], "synopsis": u["synopsis"],
-                       "beats": (u["content"] or {}).get("beats", []), "seconds": u["estimated_seconds"]} for u in units],
-            "omit": [b["beat_text"] for b in removed_beats(db, episode["series_id"])
-                     if b["unit"] in {u["sequence_number"] for u in units}],
-            **names},
-    )
+    removed = removed_beats(db, episode["series_id"])
     client = client or LLMStageClient(get_llm_provider())
-    result: SceneBreakdownResult = client.run(db, run["id"], STAGE, f"episode:{episode_id}", request,
-                                              SceneBreakdownResult, [c["chunk_id"] for c in kept])
-    if not result.scenes:
+
+    # One call per unit: a single call for the whole episode produced a few shots per scene, far below the screen time.
+    scenes = []
+    for unit in units:
+        wanted = {ref.get("chunk_id") for ref in unit["source_reference"] or []}
+        words = 0
+        kept = []
+        for chunk in (c for c in all_chunks if c["chunk_id"] in wanted):  # keep the prompt inside one batch of text
+            words += len(chunk["text"].split())
+            if words > settings.analysis_batch_words * 2 and kept:
+                break
+            kept.append(chunk)
+        request = LLMAnalysisRequest(
+            task="scene_breakdown", profile=str(run["profile"]), context_chunks=kept, known_entities={},
+            story_format=story_format,
+            task_input={
+                "episode": {"title": episode["title"], "synopsis": episode["synopsis"],
+                            "target_seconds": unit["estimated_seconds"]},
+                "units": [{"number": unit["sequence_number"], "title": unit["title"], "synopsis": unit["synopsis"],
+                           "beats": (unit["content"] or {}).get("beats", []), "seconds": unit["estimated_seconds"]}],
+                "omit": [b["beat_text"] for b in removed if b["unit"] == unit["sequence_number"]],
+                **names},
+        )
+        result: SceneBreakdownResult = client.run(
+            db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}", request,
+            SceneBreakdownResult, [c["chunk_id"] for c in kept])
+        scenes.extend(result.scenes)
+    if not scenes:
         raise PermanentJobError("The model returned no scenes for this episode")
 
     character_ids = {n.lower(): str(i) for i, n in db.execute(
@@ -72,7 +78,7 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
         {"s": str(episode["series_id"])})}
     db.execute(text("DELETE FROM scenes WHERE episode_id = :e"), {"e": str(episode_id)})
     shot_total = 0
-    for number, scene in enumerate(result.scenes, start=1):
+    for number, scene in enumerate(scenes, start=1):
         scene_id = db.execute(
             text("""INSERT INTO scenes (episode_id, scene_number, title, description, dialogue, continuity_state,
                         environment_notes)
@@ -94,4 +100,6 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
             )
             shot_total += 1
     db.commit()
-    return {"scenes": len(result.scenes), "shots": shot_total}
+    shot_seconds = sum(shot.duration_seconds or 0 for scene in scenes for shot in scene.shots)
+    return {"scenes": len(scenes), "shots": shot_total, "shot_seconds": shot_seconds,
+            "target_seconds": episode["target_duration_seconds"]}
