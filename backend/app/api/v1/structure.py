@@ -51,7 +51,7 @@ def get_timeline(series_id: UUID, db: Session = Depends(get_db)):
     return {"anchors": [dict(a) for a in anchors], "events": [dict(e) for e in events]}
 
 
-@router.get("/series/{series_id}/continuity")
+@router.get("/series/{series_id}/continuity/states")
 def get_continuity(series_id: UUID, db: Session = Depends(get_db)):
     _series_owned(db, series_id)
     conflicts = db.execute(

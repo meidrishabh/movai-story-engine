@@ -85,18 +85,30 @@ JSON shape:
 
 CONTINUITY_SYSTEM_PROMPT = _DATA_NOTE + """You track how characters and objects change across a story, event by event, to catch continuity problems.
 
-Input: "events" in chronological order (id, title, description, characters involved), "characters" and "objects" (each with an id like E1 / O1, name and description), and "previous_states" (the last known state per entity from earlier windows).
+Input: "events" in chronological order (id, title, description), "passages" (the source text behind these events: use it for details the event summaries leave out, such as where an object is, a person's age or what they know), "characters" and "objects" (each with an id like E1 / O1, name and description), and "previous_states" (the last known state per entity from earlier windows).
 
 Report:
 - "character_states": one entry for EVERY character who appears in an event or is clearly affected by it, not only the main character. Fill in what the event states or implies: location, costume, physical condition, age or life stage, what they now know, relationship changes. Leave a field null when the event says nothing about it. "event" is the event id, "character" the character id (E1, not a name).
 - "object_states": the same for every object an event uses, moves, damages or reveals (who holds it, where it is, its condition). "owner" must be a character id (E1), or null when nobody holds it.
-- "conflicts": things that contradict each other (a dead character acting later, an object in two places, a character who knows something too early). Give the event ids in "events" and a plain description. Do not report style or plot-quality issues.
-Only report what the events state or clearly imply.
+Only report what the events and passages state or clearly imply. Do not look for contradictions here; a separate reviewer does that.
 
 JSON shape:
 {"character_states": [{"event": "V1", "character": "E1", "location": null, "costume": null, "physical_condition": null, "age_or_stage": null, "knowledge": [], "relationship_changes": [], "changes": []}],
- "object_states": [{"event": "V1", "object": "O1", "owner": null, "location": null, "condition": null, "notes": null}],
- "conflicts": [{"type": "state", "severity": "warning", "description": "", "events": ["V1", "V9"], "entity": "E1"}]}"""
+ "object_states": [{"event": "V1", "object": "O1", "owner": null, "location": null, "condition": null, "notes": null}]}"""
+
+CONTINUITY_CHECK_SYSTEM_PROMPT = _DATA_NOTE + """You are a continuity editor. You look for contradictions in a story's facts.
+
+Input: "events" in chronological order, "passages" (source text behind them), "characters" and "objects" (ids like E1 / O1 with names), "states" (what is recorded about each character and object at each event) and "previous_states" (the last known state before these events).
+
+Check each of these in turn for every character and object, and list EVERY conflict you find, not just the first:
+1. A character acts, speaks or appears after dying, leaving for good, being imprisoned or being gone, with no explanation in the story.
+2. An object is in two places at once, or is used after being lost, destroyed or given away.
+3. A character knows something before the story says they learned it, or after they should have forgotten it.
+4. Ages, appearance, injuries, names or relationships that disagree between events or inside the passages.
+A twist counts as a conflict unless the story itself explains it: a character confirmed dead who later acts is a conflict even when an event summary calls it a "resurrection" or a "mystery". Only an explanation given in the story (a faked death, mistaken identity, magic the story has established) removes the conflict. Give the event ids in "events", the entity id in "entity" and a plain one-sentence description. "severity" is "critical" for impossible facts (the dead acting), "error" for clear contradictions, "warning" for small slips. If there are no conflicts return an empty list. Do not report style or plot-quality issues.
+
+JSON shape:
+{"conflicts": [{"type": "state", "severity": "warning", "description": "", "events": ["V1", "V9"], "entity": "E1"}]}"""
 
 MASTER_SCRIPT_SYSTEM_PROMPT = _DATA_NOTE + """You turn story passages into an ordered production outline of story units (scene-sized dramatic units).
 
@@ -133,6 +145,7 @@ For each scene: title, description, location, time_of_day, environment_notes, th
 - Use known character and location names exactly.
 - Length: each unit has "seconds" of screen time. Cover every unit with one or more scenes whose shot durations add up to roughly that unit's seconds (within 15%), so a 180-second unit needs about 25-40 shots. All scenes together must come close to the episode target_seconds. Fill the time with the unit's beats, reactions, travel, establishing and cutaway shots, never by inventing events.
 - Do not add events that are not in the units.
+- "previous_attempt", when present, says your earlier answer for this unit covered only "covered_seconds" of the "needed_seconds". Write the whole unit again with more shots per beat (reactions, inserts, establishing and cutaway shots, longer holds) until the needed time is covered. Do not skip any beat.
 - "bridge_notes" in the episode, when present, say how the episode should open ("opening") and close ("closing") after neighbouring content changed. Honour them in the first and last scene without adding new events.
 - "omit" lists beats that were cut from this adaptation as filler. The passages still contain them. Do not write any scene, dialogue line or shot that shows or refers to an omitted beat; skip that part of the passage and carry on with the next beat. The unit's remaining beats must still fill its seconds, so give them more shots instead.
 
@@ -200,10 +213,11 @@ JSON shape:
 
 STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
-    "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v2"),
+    "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
+    "continuity_check": (CONTINUITY_CHECK_SYSTEM_PROMPT, "continuity-check-v2"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v5"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v6"),
     "filler": (FILLER_SYSTEM_PROMPT, "filler-v4"),
     "filler_judge": (FILLER_JUDGE_SYSTEM_PROMPT, "filler-judge-v1"),
     "episode_repair": (EPISODE_REPAIR_SYSTEM_PROMPT, "episode-repair-v1"),

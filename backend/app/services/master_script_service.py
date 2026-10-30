@@ -9,8 +9,11 @@ from app.core.settings import settings
 from app.providers.llm_base import LLMAnalysisRequest
 from app.repositories.analysis_repository import list_source_chunks
 from app.schemas.llm_stages import MasterScriptResult
+from app.services.calibration import calibrate, expected_seconds_per_word, unit_source_words
 from app.services.llm_stage import LLMStageClient
+from app.services.metrics import record_metric
 from app.services.story_analysis_service import make_batches
+from app.services.story_profiles import resolve_profile
 
 STAGE = "master_script"
 MAX_UNIT_SECONDS = 600
@@ -47,7 +50,20 @@ def build_master_script(db: Session, client: LLMStageClient, run_id: UUID, serie
                   "screen_seconds": max(20, len(c["text"].split()) // READING_WORDS_PER_SECOND),
                   "source_references": []} for c in chunks]
 
+    genre = db.execute(text("SELECT genre FROM series WHERE id = :s"), {"s": str(series_id)}).scalar()
+    profile_key, _ = resolve_profile(genre)
+    expected, history = expected_seconds_per_word(db, series_id, profile_key)
+    words = unit_source_words(units, {c["chunk_id"]: len(c["text"].split()) for c in chunks})
+    raw_total = sum(u["screen_seconds"] for u in units)
+    clamped = calibrate(units, words, expected)
     total = sum(u["screen_seconds"] for u in units)
+    source_words = sum(count for count, _ in words)
+    if source_words:
+        detail = {"story_profile": profile_key, "expected": expected, "history_runs": history,
+                  "source_words": source_words, "model_estimate_seconds": raw_total}
+        # The recorded rate is the model's own estimate, so history is not pulled toward earlier corrections.
+        record_metric(db, series_id, run_id, "master_script", "seconds_per_word", raw_total / source_words, detail)
+        record_metric(db, series_id, run_id, "master_script", "clamped_units", len(clamped), {**detail, "units": clamped})
     version = db.execute(text("SELECT COALESCE(MAX(version_number), 0) + 1 FROM master_scripts WHERE series_id = :s"),
                          {"s": str(series_id)}).scalar_one()
     db.execute(text("UPDATE master_scripts SET status = 'superseded' WHERE series_id = :s AND status = 'draft'"),

@@ -44,7 +44,8 @@ Supported uploads: Markdown and text-layer PDF. OCR is rejected.
 | GET | `/series/{series_id}/pipeline` | Series story status |
 | GET | `/series/{series_id}/analysis-estimate` | Estimated LLM calls, tokens and minimum time for the latest source |
 | GET | `/series/{series_id}/timeline` | Timeline anchors (in story order) and events with their chronological position |
-| GET | `/series/{series_id}/continuity` | Character/object states per event and detected continuity conflicts |
+| GET | `/series/{series_id}/continuity` | Characters, costumes and continuity objects (catalogue) |
+| GET | `/series/{series_id}/continuity/states` | Character/object states per event and detected continuity conflicts |
 | GET | `/series/{series_id}/master-script` | Latest master script with its ordered story units and screen-time estimates |
 | GET | `/series/{series_id}/episode-plans` | Draft episode plans (season, title, synopsis, duration, characters) |
 | PATCH | `/episode-plans/{plan_id}` | Edit a draft plan (title, synopsis, hook, climax, ending, note) |
