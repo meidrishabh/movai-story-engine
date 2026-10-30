@@ -5,7 +5,7 @@ accepted where text is expected. Null values are dropped before validation.
 """
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Loose(BaseModel):
@@ -205,3 +205,32 @@ class HighlightResult(_Loose):
     title: str | None = None
     logline: str | None = ""
     segments: list[HighlightSegment] = Field(default_factory=list)
+
+
+# ----- character appearance ------------------------------------------------
+
+class CostumeOut(_Loose):
+    name: str = Field(min_length=1)
+    description: str | None = ""
+    colors: list[str] = Field(default_factory=list)
+    accessories: list[str] = Field(default_factory=list)
+    when: str | None = None
+
+
+class AppearanceResult(_Loose):
+    @field_validator("description", "age", "face_and_body", "clothing", "distinctive_features", "voice", mode="before")
+    @classmethod
+    def _join_lists(cls, value):
+        # Models often list traits ["scar", "limp"] where a sentence is asked for.
+        return ", ".join(str(v) for v in value if v) or None if isinstance(value, list) else value
+
+    description: str | None = None
+    age: str | None = None
+    face_and_body: str | None = None
+    clothing: str | None = None
+    distinctive_features: str | None = None
+    color_palette: list[str] = Field(default_factory=list)
+    voice: str | None = None
+    costumes: list[CostumeOut] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)

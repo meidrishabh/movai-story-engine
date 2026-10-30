@@ -54,6 +54,9 @@ Supported uploads: Markdown and text-layer PDF. OCR is rejected.
 | POST | `/episode-plans/{plan_id}/reject` | Reject a draft plan (optional `review_note`) |
 | GET | `/series/{series_id}/breakdown` | Every episode with its breakdown state: `scene_count`, `shot_seconds` against `target_duration_seconds`, `breakdown_stale`, and the latest breakdown `job_status` / `job_error` |
 | POST | `/series/{series_id}/breakdown` | Queue a breakdown for every episode that has none or is stale and has no job running (202, `{queued}`) |
+| GET | `/series/{series_id}/appearance` | Newest reference sheet per character (user-approved first, else the draft read from the story): description, face and body, clothing, distinctive features, colours, voice, `costumes`, and `change_notes` with the evidence quotes. Fields the story does not state are null |
+| PUT | `/characters/{character_id}/appearance` | Save the user's sheet. It becomes the approved version, so re-analysis never overwrites it |
+| POST | `/series/{series_id}/appearance/generate` | Read the story again for how characters look (202, a queued job). Approved sheets are kept |
 | POST | `/episodes/{episode_id}/breakdown` | Queue a scene/shot/dialogue breakdown job (202) |
 | GET | `/episodes/{episode_id}/breakdown` | Scenes with dialogue and shots for an episode, `stale` (the cut changed since it was built) and the episode's bridge `continuity_notes` |
 | GET | `/series/{series_id}/adaptations` | Full, concentrated, trailer and teaser options: duration, status, `available` (already generated and current), `selected`, `removed` beats (proposed, judged and not reused later), `disputed` beats (kept in the story, with reasons), trailer/teaser summary |

@@ -85,7 +85,12 @@ def _mock_highlight(request: LLMAnalysisRequest) -> dict:
         {"unit": u["number"], "description": u.get("synopsis") or u.get("title") or "Segment", "seconds": each} for u in units]}
 
 
+def _mock_appearance(request: LLMAnalysisRequest) -> dict:
+    return {"missing": ["age", "face_and_body", "clothing", "distinctive_features", "voice"]}
+
+
 _STAGE_MOCKS = {
+    "appearance": _mock_appearance,
     "filler": _mock_filler, "filler_judge": _mock_filler_judge, "episode_repair": _mock_episode_repair,
     "highlight": _mock_highlight,
     "timeline": _mock_timeline, "continuity": _mock_continuity, "continuity_check": _mock_continuity_check, "master_script": _mock_master_script,

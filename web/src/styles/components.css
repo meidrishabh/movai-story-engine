@@ -359,3 +359,30 @@
   white-space: pre-wrap;
   font-style: italic;
 }
+
+/* ----- character look ----- */
+.appearance {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.facts div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+}
+.fine {
+  font-size: 12px;
+}
