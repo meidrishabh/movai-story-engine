@@ -3,6 +3,7 @@
 Run with:  python -m app.workers.job_runner [--once]
 """
 import argparse
+import json
 import logging
 import time
 from uuid import UUID
@@ -12,6 +13,8 @@ from sqlalchemy import text
 from app.core.errors import PermanentJobError
 from app.db import SessionLocal
 from app.repositories.analysis_repository import mark_analysis_running
+from app.services.analysis_pipeline import run_structure_stages
+from app.services.scene_breakdown_service import build_scene_breakdown
 from app.workers.embedding_job import process_embedding_job
 from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
 
@@ -33,7 +36,9 @@ WHERE id = (
       AND (run_after IS NULL OR run_after <= now())
       AND (job_type = 'embedding_generation'
            OR (job_type = 'story_analysis'
-               AND request_metadata ->> 'analysis_run_id' IS NOT NULL))
+               AND request_metadata ->> 'analysis_run_id' IS NOT NULL)
+           OR (job_type = 'scene_breakdown'
+               AND request_metadata ->> 'episode_id' IS NOT NULL))
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
@@ -94,11 +99,24 @@ def run_story_analysis(db, job):
     run_id = UUID(metadata["analysis_run_id"])
     mark_analysis_running(db, run_id)
     db.commit()
-    process_entity_extraction(db, run_id, on_progress=lambda: touch_heartbeat(db, job["id"]))
+    beat = lambda: touch_heartbeat(db, job["id"])  # noqa: E731
+    process_entity_extraction(db, run_id, on_progress=beat)
+    run_structure_stages(db, run_id, on_progress=beat)
     complete_story_analysis(db, job["id"], metadata)
 
 
+def run_scene_breakdown(db, job):
+    result = build_scene_breakdown(db, UUID(job["request_metadata"]["episode_id"]))
+    db.execute(
+        text("""UPDATE generation_jobs SET status = 'succeeded', progress = 100, completed_at = now(),
+                  usage_metadata = CAST(:result AS jsonb) WHERE id = :job_id"""),
+        {"job_id": str(job["id"]), "result": json.dumps(result)},
+    )
+    db.commit()
+
+
 HANDLERS = {
+    "scene_breakdown": run_scene_breakdown,
     "embedding_generation": run_embedding,
     "story_analysis": run_story_analysis,
 }

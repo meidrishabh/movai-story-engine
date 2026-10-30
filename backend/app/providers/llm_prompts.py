@@ -129,7 +129,7 @@ Input: "episode" (title, synopsis, target_seconds), "units" (the story units in 
 
 For each scene: title, description, location, time_of_day, environment_notes, the characters present, "dialogue" (character, line, optional delivery) and "shots".
 - Dialogue: use lines from the passages where they exist. Where the source has no spoken lines for a moment, write short in-character dialogue only if the scene needs it, faithful to the story.
-- Shots: 2-6 per scene, each a concrete visual description, "camera" (framing / movement, for example "wide establishing", "slow push-in on face"), duration_seconds and the characters visible.
+- Shots: each is ONE continuous camera setup lasting about 3-10 seconds, so a scene lasting a minute has roughly 6-15 shots. Each has a concrete visual description, "camera" (framing / movement, for example "wide establishing", "slow push-in on face"), duration_seconds and the characters visible.
 - Use known character and location names exactly. Scene and shot durations should add up near the episode target_seconds.
 - Do not add events that are not in the units.
 
@@ -143,7 +143,7 @@ STAGE_PROMPTS = {
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v1"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v1"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v2"),
 }
 
 
