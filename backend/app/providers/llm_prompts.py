@@ -149,6 +149,8 @@ NEVER remove: plot points, reveals, decisions, character introductions, setup th
 - Prefer removing single beats ("beat": the beat number). Remove a whole unit (leave "beat" null) only when every beat in it is filler.
 - "seconds_saved" is the screen time removed (never more than 60% of the unit's seconds unless the whole unit goes).
 - A choice a character makes, or the moment a character changes their mind, is never filler even if it looks repetitive.
+- A beat that does two things (for example a farewell AND setting off on the next stage) is never filler, because one part still moves the story. Departures, arrivals, losses, farewells, discoveries, and the beat that hands the story to the next unit are never filler.
+- Only these count as filler: a description of scenery or objects that changes nothing, a second telling of something already shown, small talk, or one more example of an idea already made clear.
 - When you are unsure whether something matters later, keep it.
 - If nothing is filler, return an empty list. Do not remove things just to hit a length.
 
@@ -175,7 +177,7 @@ STAGE_PROMPTS = {
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
     "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v4"),
-    "filler": (FILLER_SYSTEM_PROMPT, "filler-v2"),
+    "filler": (FILLER_SYSTEM_PROMPT, "filler-v3"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }
 
