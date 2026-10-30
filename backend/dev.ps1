@@ -8,6 +8,5 @@ if (Test-Path $activate) { $prefix = "& '$activate'; " }
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$here'; $prefix uvicorn app.main:app --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$here'; $prefix python -m app.workers.job_runner"
 
-Write-Host "API:    http://127.0.0.1:8000/ui/"
-Write-Host "Review: http://127.0.0.1:8000/ui/review.html"
+Write-Host "API:    http://127.0.0.1:8000/docs"
 Write-Host "Close the two windows to stop."
