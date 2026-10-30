@@ -88,8 +88,8 @@ CONTINUITY_SYSTEM_PROMPT = _DATA_NOTE + """You track how characters and objects 
 Input: "events" in chronological order (id, title, description, characters involved), "characters" and "objects" (each with an id like E1 / O1, name and description), and "previous_states" (the last known state per entity from earlier windows).
 
 Report:
-- "character_states": a state ONLY when an event changes or reveals something about a character (location, costume, physical condition, age or life stage, what they now know, relationship changes). "event" is the event id, "character" the character id.
-- "object_states": the same for objects (who holds it, where it is, its condition).
+- "character_states": one entry for EVERY character who appears in an event or is clearly affected by it, not only the main character. Fill in what the event states or implies: location, costume, physical condition, age or life stage, what they now know, relationship changes. Leave a field null when the event says nothing about it. "event" is the event id, "character" the character id (E1, not a name).
+- "object_states": the same for every object an event uses, moves, damages or reveals (who holds it, where it is, its condition). "owner" must be a character id (E1), or null when nobody holds it.
 - "conflicts": things that contradict each other (a dead character acting later, an object in two places, a character who knows something too early). Give the event ids in "events" and a plain description. Do not report style or plot-quality issues.
 Only report what the events state or clearly imply.
 
@@ -170,7 +170,7 @@ JSON shape:
 
 STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
-    "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v1"),
+    "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v2"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
     "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v2"),

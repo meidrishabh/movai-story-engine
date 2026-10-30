@@ -110,8 +110,12 @@ def run_story_analysis(db, job):
     db.commit()
     beat = lambda: touch_heartbeat(db, job["id"])  # noqa: E731
     process_entity_extraction(db, run_id, on_progress=beat)
-    run_structure_stages(db, run_id, on_progress=beat)
-    complete_story_analysis(db, job["id"], metadata)
+    structure = run_structure_stages(db, run_id, on_progress=beat)
+    extraction = db.execute(
+        text("""SELECT output_metadata -> 'usage' FROM analysis_run_stages
+                WHERE analysis_run_id = :r AND stage_name = 'entity_extraction'"""), {"r": str(run_id)}).scalar() or {}
+    usage = {key: int(extraction.get(key, 0)) + int(count) for key, count in structure["llm_usage"].items()}
+    complete_story_analysis(db, job["id"], metadata, usage)
 
 
 def _succeed(db, job, result: dict):
