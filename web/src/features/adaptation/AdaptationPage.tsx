@@ -46,11 +46,10 @@ export default function AdaptationPage() {
       <PageHeader title="Adaptation" subtitle="Episodes are planned from the concentrated version: the same story without filler. Every cut can be undone." />
 
       <div className="tiles">
-        <Tile label="Whole adaptation" value={formatDuration(full.duration_seconds)} />
         <Tile
-          label="Concentrated"
-          value={concentrated?.available ? formatDuration(concentrated.duration_seconds) : '–'}
-          note={concentrated?.available ? `${formatDuration(concentrated.saved_seconds)} of filler removed` : 'Not generated yet'}
+          label="Adaptation length"
+          value={formatDuration(concentrated?.available ? concentrated.duration_seconds : full.duration_seconds)}
+          note={concentrated?.available ? `${formatDuration(concentrated.saved_seconds)} of filler removed` : 'Filler review not run yet'}
         />
       </div>
 
