@@ -237,6 +237,16 @@ def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: 
                       "story_profile": profile_key, "proposal_model": provider_model(client.provider),
                       "judge_model": provider_model(client.judge_provider or client.provider)})
 
+    # A beat the user cut stays cut even when this run's first pass no longer proposes it.
+    handled = {c["beat_text"] for c in candidates if c["beat_text"]}
+    for unit in units:
+        for position, beat_text in enumerate(unit["beats"], start=1):
+            if user_decisions.get(beat_text) == "removed" and beat_text not in handled:
+                handled.add(beat_text)
+                removed.append({"unit": unit["number"], "unit_title": unit["title"], "beat": position, "beat_text": beat_text,
+                                "reason": "Cut by you.", "seconds": max(1, int(unit["screen_seconds"] / max(1, len(unit["beats"])))),
+                                "judge_reason": "", "reused_later": [], "by": "user"})
+
     content = {"removed": removed, "disputed": disputed, "restored": restored, "story_profile": profile_key}
     total = _totals(content, units)
     _upsert(db, series_id, "concentrated", master_script_id=master_script_id, duration_seconds=total, status="ready",

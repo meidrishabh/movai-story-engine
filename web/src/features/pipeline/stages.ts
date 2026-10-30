@@ -7,8 +7,9 @@ import type { AnalysisRun } from './types'
 export const STAGES = [
   { key: 'chunk_analysis', label: 'Read the story', doneAt: 20 },
   { key: 'entity_extraction', label: 'Find characters, places and objects', doneAt: 85 },
-  { key: 'timeline', label: 'Order the events', doneAt: 88 },
-  { key: 'continuity', label: 'Track continuity and contradictions', doneAt: 92 },
+  { key: 'timeline', label: 'Order the events', doneAt: 87 },
+  { key: 'continuity', label: 'Track continuity and contradictions', doneAt: 90 },
+  { key: 'appearance', label: 'Read how characters, places and objects look', doneAt: 93 },
   { key: 'master_script', label: 'Write the master script', doneAt: 95 },
   { key: 'adaptations', label: 'Look for filler', doneAt: 97 },
   { key: 'episode_plan', label: 'Plan the episodes', doneAt: 99 },

@@ -173,6 +173,15 @@ def decide_beat(series_id: UUID, payload: BeatDecision, db: Session = Depends(ge
         job = {"id": queued} if queued else _queue(db, "adaptation_generation", {"series_id": str(series_id), "kind": "repair"})
         db.commit()
         result["repair_job"] = str(job["id"])
+    # Draft plans (nothing approved yet) were built from the old cut, so plan again from the new one.
+    result["replan_job"] = None
+    plan_states = {row[0] for row in db.execute(
+        text("""SELECT DISTINCT p.status FROM episode_plans p JOIN seasons s ON s.id = p.season_id WHERE s.series_id = :s"""),
+        {"s": str(series_id)})}
+    if "draft" in plan_states and "approved" not in plan_states and not _active(db, "episode_segmentation", "plan_series_id", str(series_id)):
+        job = _queue(db, "episode_segmentation", {"plan_series_id": str(series_id), "adaptation_kind": selected_main(db, series_id)})
+        db.commit()
+        result["replan_job"] = str(job["id"])
     return result
 
 

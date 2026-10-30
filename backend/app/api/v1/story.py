@@ -28,6 +28,22 @@ from app.services.story_analysis_service import estimate_analysis
 router = APIRouter(prefix="/api/v1", tags=["story"])
 
 
+def _attention(db, series_id: UUID) -> dict:
+    """Counts of things the pipeline finished but wants a person to look at."""
+    count = lambda sql: db.execute(text(sql), {"s": str(series_id)}).scalar() or 0  # noqa: E731
+    entities = sum(count(f"SELECT count(*) FROM {t} WHERE series_id = :s AND merged_into_id IS NULL AND review_status = 'needs_review'")
+                   for t in ("characters", "locations", "continuity_objects"))
+    content = db.execute(
+        text("SELECT content FROM adaptations WHERE series_id = :s AND kind = 'concentrated' AND status = 'ready'"),
+        {"s": str(series_id)}).scalar() or {}
+    return {
+        "entities_to_review": entities,
+        "open_conflicts": count("SELECT count(*) FROM continuity_conflicts WHERE series_id = :s AND status = 'open'"),
+        "disputed_beats": len(content.get("disputed", [])),
+        "draft_plans": count("SELECT count(*) FROM episode_plans p JOIN seasons x ON x.id = p.season_id WHERE x.series_id = :s AND p.status = 'draft'"),
+    }
+
+
 @router.get("/series/{series_id}/pipeline")
 def get_series_story_pipeline(series_id: UUID, db: Session = Depends(get_db)):
     series = db.execute(
@@ -85,6 +101,7 @@ def get_series_story_pipeline(series_id: UUID, db: Session = Depends(get_db)):
         story_status = "master_script_ready"
 
     return {
+        "attention": _attention(db, series_id),
         "series": dict(series),
         "source": dict(source) if source else None,
         "master_script": dict(master_script) if master_script else None,

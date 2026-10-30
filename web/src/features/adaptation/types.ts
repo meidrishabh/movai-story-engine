@@ -40,6 +40,7 @@ export interface BeatDecisionResult {
   duration_seconds: number
   affected_episodes: string[]
   repair_job: string | null
+  replan_job: string | null
 }
 
 export type BeatAction = 'keep' | 'cut'
