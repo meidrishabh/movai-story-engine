@@ -10,7 +10,7 @@ from app.schemas.llm_stages import ContinuityResult
 from app.services.llm_stage import LLMStageClient
 
 STAGE = "continuity"
-WINDOW = 40  # events per model call, in chronological order
+WINDOW = 8  # events per model call, in chronological order; small so the model covers every event
 SEVERITIES = {"info", "warning", "error", "critical"}
 
 
