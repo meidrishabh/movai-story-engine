@@ -195,7 +195,8 @@ def queue_scene_breakdown(episode_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/episodes/{episode_id}/breakdown")
 def get_breakdown(episode_id: UUID, db: Session = Depends(get_db)):
-    episode = db.execute(text("SELECT series_id FROM episodes WHERE id = :id"), {"id": str(episode_id)}).mappings().first()
+    episode = db.execute(text("SELECT series_id, breakdown_stale, continuity_notes FROM episodes WHERE id = :id"),
+                         {"id": str(episode_id)}).mappings().first()
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode was not found")
     _series_owned(db, episode["series_id"])
@@ -210,4 +211,5 @@ def get_breakdown(episode_id: UUID, db: Session = Depends(get_db)):
     for shot in shots:
         by_scene.setdefault(str(shot["scene_id"]), []).append(
             {k: (float(v) if k == "duration_seconds" and v is not None else v) for k, v in shot.items() if k != "scene_id"})
-    return {"count": len(scenes), "items": [{**dict(s), "shots": by_scene.get(str(s["id"]), [])} for s in scenes]}
+    return {"count": len(scenes), "stale": episode["breakdown_stale"], "continuity_notes": episode["continuity_notes"],
+            "items": [{**dict(s), "shots": by_scene.get(str(s["id"]), [])} for s in scenes]}

@@ -1,4 +1,5 @@
 """Scene breakdown: one approved episode -> scenes, dialogue and shots."""
+import hashlib
 import json
 from uuid import UUID
 
@@ -21,7 +22,7 @@ STAGE = "scene_breakdown"
 
 def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient | None = None) -> dict:
     episode = db.execute(
-        text("""SELECT id, series_id, title, synopsis, target_duration_seconds, source_unit_ids
+        text("""SELECT id, series_id, title, synopsis, target_duration_seconds, source_unit_ids, continuity_notes
                 FROM episodes WHERE id = :e"""), {"e": str(episode_id)}).mappings().first()
     if episode is None:
         raise PermanentJobError("Episode was not found")
@@ -61,14 +62,17 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
             story_format=story_format,
             task_input={
                 "episode": {"title": episode["title"], "synopsis": episode["synopsis"],
-                            "target_seconds": unit["estimated_seconds"]},
+                            "target_seconds": unit["estimated_seconds"],
+                            "bridge_notes": episode["continuity_notes"] or {}},
                 "units": [{"number": unit["sequence_number"], "title": unit["title"], "synopsis": unit["synopsis"],
                            "beats": (unit["content"] or {}).get("beats", []), "seconds": unit["estimated_seconds"]}],
                 "omit": [b["beat_text"] for b in removed if b["unit"] == unit["sequence_number"]],
                 **names},
         )
+        # The key includes a hash of the input, so a changed cut or new bridge notes never reuse an old reply.
+        digest = hashlib.sha1(json.dumps(request.task_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
         result: SceneBreakdownResult = client.run(
-            db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}", request,
+            db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{digest}", request,
             SceneBreakdownResult, [c["chunk_id"] for c in kept])
         scenes.extend(result.scenes)
     if not scenes:
@@ -100,6 +104,7 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
                  "seconds": shot.duration_seconds, "ids": "{" + ",".join(ids) + "}"},
             )
             shot_total += 1
+    db.execute(text("UPDATE episodes SET breakdown_stale = FALSE WHERE id = :e"), {"e": str(episode_id)})
     db.commit()
     shot_seconds = sum(shot.duration_seconds or 0 for scene in scenes for shot in scene.shots)
     if episode["target_duration_seconds"]:  # planned vs actual screen time, the basis for calibrating duration estimates

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.api.v1.entities import _series_owned
 from app.core.errors import PermanentJobError
+from app.services.episode_repair_service import affected_episodes
 from app.services.adaptation_service import (
     BOUNDS, DEFAULT_SECONDS, apply_user_decision, build_full, latest_master_script, selected_main)
 
@@ -162,11 +163,16 @@ def decide_beat(series_id: UUID, payload: BeatDecision, db: Session = Depends(ge
     except PermanentJobError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
-    result["affected_episodes"] = [str(r[0]) for r in db.execute(
-        text("""SELECT e.id FROM episodes e JOIN story_units u ON u.id = ANY(e.source_unit_ids)
-                WHERE e.series_id = :s AND u.sequence_number = :n AND u.master_script_id = (
-                    SELECT master_script_id FROM adaptations WHERE series_id = :s AND kind = 'concentrated')"""),
-        {"s": str(series_id), "n": payload.unit})]
+    result["affected_episodes"] = [str(e["id"]) for e in affected_episodes(db, series_id) if e["changed"]]
+    result["repair_job"] = None
+    if result["affected_episodes"]:  # one queued repair reads the latest cut, so a second click needs no second job
+        queued = db.execute(
+            text("""SELECT id FROM generation_jobs WHERE job_type = 'adaptation_generation' AND status = 'queued'
+                    AND request_metadata ->> 'series_id' = :s AND request_metadata ->> 'kind' = 'repair'"""),
+            {"s": str(series_id)}).scalar()
+        job = {"id": queued} if queued else _queue(db, "adaptation_generation", {"series_id": str(series_id), "kind": "repair"})
+        db.commit()
+        result["repair_job"] = str(job["id"])
     return result
 
 

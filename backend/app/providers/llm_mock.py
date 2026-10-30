@@ -68,6 +68,11 @@ def _mock_filler_judge(request: LLMAnalysisRequest) -> dict:
     return {"verdicts": [{"id": c["id"], "verdict": "keep", "reason": "mock"} for c in request.task_input.get("candidates", [])]}
 
 
+def _mock_episode_repair(request: LLMAnalysisRequest) -> dict:
+    return {"episodes": [{"number": e["number"], "synopsis": e["synopsis"] if e.get("changed") else None,
+                          "opening_note": None, "closing_note": None} for e in request.task_input.get("episodes", [])]}
+
+
 def _mock_highlight(request: LLMAnalysisRequest) -> dict:
     target = int(request.task_input.get("target_seconds") or 60)
     units = request.task_input.get("units", [])[:4]
@@ -77,7 +82,8 @@ def _mock_highlight(request: LLMAnalysisRequest) -> dict:
 
 
 _STAGE_MOCKS = {
-    "filler": _mock_filler, "filler_judge": _mock_filler_judge, "highlight": _mock_highlight,
+    "filler": _mock_filler, "filler_judge": _mock_filler_judge, "episode_repair": _mock_episode_repair,
+    "highlight": _mock_highlight,
     "timeline": _mock_timeline, "continuity": _mock_continuity, "master_script": _mock_master_script,
     "episode_plan": _mock_episode_plan, "scene_breakdown": _mock_scene_breakdown,
 }
