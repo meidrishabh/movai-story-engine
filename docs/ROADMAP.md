@@ -34,7 +34,8 @@ Known gaps in what exists: the review page is untested in a browser; only a 2-ch
 3. **Master script and duration:** generated from events; per-unit duration estimates.
 4. **Season and episode plans:** split along the story, not by page count; user picks season count and episode length; plans are reviewed and approved before episodes exist (episodes stay system-generated).
 5. **Scene and shot breakdown with dialogue:** per episode, with who is present, action, camera and duration.
-6. **Long-story test:** run a full novel through the pipeline and measure calls, time and merge quality against free-tier limits.
+6. **Adaptation options:** after processing, the user picks one main adaptation (full, or concentrated with only filler removed) and optionally a trailer (1-4 min) and a teaser (under 1 min). Each option reports whether it already exists; episode plans follow the chosen adaptation.
+7. **Long-story test:** run a full novel through the pipeline and measure calls, time and merge quality against free-tier limits.
 
 Done when a real story goes from upload to approved episode plans and shot lists with no manual database work, and the review page shows only items that need a decision.
 

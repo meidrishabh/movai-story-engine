@@ -11,6 +11,7 @@ from app.providers.llm_base import LLMAnalysisRequest
 from app.providers.llm_factory import get_llm_provider
 from app.repositories.analysis_repository import list_source_chunks
 from app.schemas.llm_stages import SceneBreakdownResult
+from app.services.adaptation_service import removed_beats
 from app.services.llm_stage import LLMStageClient
 from app.services.story_analysis_service import detect_story_format
 
@@ -56,6 +57,8 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
                         "target_seconds": episode["target_duration_seconds"]},
             "units": [{"number": u["sequence_number"], "title": u["title"], "synopsis": u["synopsis"],
                        "beats": (u["content"] or {}).get("beats", []), "seconds": u["estimated_seconds"]} for u in units],
+            "omit": [b["beat_text"] for b in removed_beats(db, episode["series_id"])
+                     if b["unit"] in {u["sequence_number"] for u in units}],
             **names},
     )
     client = client or LLMStageClient(get_llm_provider())

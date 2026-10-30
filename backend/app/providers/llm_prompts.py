@@ -132,11 +132,41 @@ For each scene: title, description, location, time_of_day, environment_notes, th
 - Shots: each is ONE continuous camera setup lasting about 3-10 seconds, so a scene lasting a minute has roughly 6-15 shots. Each has a concrete visual description, "camera" (framing / movement, for example "wide establishing", "slow push-in on face"), duration_seconds and the characters visible.
 - Use known character and location names exactly. Scene and shot durations should add up near the episode target_seconds.
 - Do not add events that are not in the units.
+- "omit" lists beats that were cut from this adaptation as filler: leave them out of the scenes.
 
 JSON shape:
 {"scenes": [{"title": "", "description": "", "location": "", "time_of_day": null, "environment_notes": null, "characters": [],
   "dialogue": [{"character": "", "line": "", "delivery": null}],
   "shots": [{"description": "", "camera": "", "duration_seconds": 4, "characters": []}]}]}"""
+
+FILLER_SYSTEM_PROMPT = _DATA_NOTE + """You shorten a story adaptation by finding FILLER only, so the story stays intact.
+
+Input: "units" (numbered, each with title, synopsis, numbered "beats" and screen_seconds).
+
+Filler means: repeats of something already shown, lingering description or travel with no plot change, extra chatter that adds nothing new, a second example of the same point.
+NEVER remove: plot points, reveals, decisions, character introductions, setup that is paid off later, emotional turning points, or the first time anything important is shown.
+- Prefer removing single beats ("beat": the beat number). Remove a whole unit (leave "beat" null) only when every beat in it is filler.
+- "seconds_saved" is the screen time removed (never more than 60% of the unit's seconds unless the whole unit goes).
+- A choice a character makes, or the moment a character changes their mind, is never filler even if it looks repetitive.
+- When you are unsure whether something matters later, keep it.
+- If nothing is filler, return an empty list. Do not remove things just to hit a length.
+
+JSON shape:
+{"removals": [{"unit": 2, "beat": 3, "reason": "", "seconds_saved": 20}]}"""
+
+HIGHLIGHT_SYSTEM_PROMPT = _DATA_NOTE + """You write a trailer or teaser script from a story's master script.
+
+Input: "kind" (trailer or teaser), "target_seconds", "units" (numbered, with title, synopsis, beats, screen_seconds), "characters", and "story_summary".
+
+- A trailer (1-4 minutes) sells the story: set the world, introduce the main characters, build the central conflict and end on a hook.
+- A teaser (under 1 minute) is a hook: mood, stakes and one open question.
+- NEVER reveal the ending or the answer to the central mystery.
+- Use only events from the units; do not invent plot. "voiceover" is optional narration or a line of dialogue taken from the story.
+- Segment seconds must add up to about target_seconds (within 10%). A teaser must stay under 60 seconds in total.
+- "unit" is the unit number the segment draws from.
+
+JSON shape:
+{"title": "", "logline": "", "segments": [{"unit": 1, "description": "", "voiceover": null, "seconds": 8}]}"""
 
 STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
@@ -144,6 +174,8 @@ STAGE_PROMPTS = {
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
     "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v2"),
+    "filler": (FILLER_SYSTEM_PROMPT, "filler-v2"),
+    "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }
 
 

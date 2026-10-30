@@ -158,3 +158,29 @@ class SceneOut(_Loose):
 
 class SceneBreakdownResult(_Loose):
     scenes: list[SceneOut] = Field(default_factory=list)
+
+
+# ----- adaptations: filler detection, trailer and teaser ---------------------
+
+class FillerItem(_Loose):
+    unit: int
+    beat: int | None = None  # 1-based beat number inside the unit; empty = the whole unit
+    reason: str | None = ""
+    seconds_saved: float | None = None
+
+
+class FillerResult(_Loose):
+    removals: list[FillerItem] = Field(default_factory=list)
+
+
+class HighlightSegment(_Loose):
+    unit: int | None = None
+    description: str = Field(min_length=1)
+    voiceover: str | None = None
+    seconds: float | None = None
+
+
+class HighlightResult(_Loose):
+    title: str | None = None
+    logline: str | None = ""
+    segments: list[HighlightSegment] = Field(default_factory=list)
