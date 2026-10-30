@@ -23,6 +23,10 @@ def _mock_continuity(request: LLMAnalysisRequest) -> dict:
     return {"character_states": [], "object_states": [], "conflicts": []}
 
 
+def _mock_continuity_check(request: LLMAnalysisRequest) -> dict:
+    return {"conflicts": []}
+
+
 def _mock_master_script(request: LLMAnalysisRequest) -> dict:
     units = []
     for index, chunk in enumerate(request.context_chunks):
@@ -84,7 +88,7 @@ def _mock_highlight(request: LLMAnalysisRequest) -> dict:
 _STAGE_MOCKS = {
     "filler": _mock_filler, "filler_judge": _mock_filler_judge, "episode_repair": _mock_episode_repair,
     "highlight": _mock_highlight,
-    "timeline": _mock_timeline, "continuity": _mock_continuity, "master_script": _mock_master_script,
+    "timeline": _mock_timeline, "continuity": _mock_continuity, "continuity_check": _mock_continuity_check, "master_script": _mock_master_script,
     "episode_plan": _mock_episode_plan, "scene_breakdown": _mock_scene_breakdown,
 }
 

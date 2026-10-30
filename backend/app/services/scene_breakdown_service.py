@@ -1,6 +1,7 @@
 """Scene breakdown: one approved episode -> scenes, dialogue and shots."""
 import hashlib
 import json
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import text
@@ -18,6 +19,11 @@ from app.services.metrics import record_metric
 from app.services.story_analysis_service import detect_story_format
 
 STAGE = "scene_breakdown"
+MIN_COVERAGE = 0.8  # a unit whose shots add up to less than this share of its screen time gets one more try
+
+
+def _shot_seconds(result: SceneBreakdownResult) -> float:
+    return sum(shot.duration_seconds or 0 for scene in result.scenes for shot in scene.shots)
 
 
 def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient | None = None) -> dict:
@@ -74,6 +80,16 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
         result: SceneBreakdownResult = client.run(
             db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{digest}", request,
             SceneBreakdownResult, [c["chunk_id"] for c in kept])
+        needed, covered = unit["estimated_seconds"] or 0, _shot_seconds(result)
+        if needed and covered < MIN_COVERAGE * needed:  # the model under-wrote this unit; ask once more, keep the better
+            retry_input = {**request.task_input, "previous_attempt": {"covered_seconds": round(covered),
+                                                                         "needed_seconds": needed}}
+            retry_digest = hashlib.sha1(json.dumps(retry_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
+            retry = client.run(db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{retry_digest}",
+                               replace(request, task_input=retry_input), SceneBreakdownResult,
+                               [c["chunk_id"] for c in kept])
+            if _shot_seconds(retry) > covered:
+                result = retry
         scenes.extend(result.scenes)
     if not scenes:
         raise PermanentJobError("The model returned no scenes for this episode")

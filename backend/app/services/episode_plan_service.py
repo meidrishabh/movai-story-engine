@@ -12,6 +12,7 @@ from app.services.llm_stage import LLMStageClient
 
 STAGE = "episode_plan"
 DEFAULT_EPISODE_SECONDS = 600
+MIN_EPISODE_SHARE = 0.4  # an episode shorter than this share of the target is merged into its neighbour
 
 
 def _fallback_ranges(units: list[dict], target: int) -> list[tuple[int, int]]:
@@ -47,6 +48,21 @@ def repair_ranges(episodes: list[tuple[int, int]], first: int, last: int) -> lis
     return repaired
 
 
+def merge_short(ranges: list[tuple[int, int]], seconds: dict[int, int], target: int) -> list[tuple[int, int]]:
+    """Merge episodes shorter than MIN_EPISODE_SHARE of the target into their shorter neighbour."""
+    ranges = list(ranges)
+    length = lambda r: sum(seconds.get(n, 0) for n in range(r[0], r[1] + 1))  # noqa: E731
+    while len(ranges) > 1:
+        index = min(range(len(ranges)), key=lambda i: length(ranges[i]))
+        if length(ranges[index]) >= MIN_EPISODE_SHARE * target:
+            break
+        neighbours = [i for i in (index - 1, index + 1) if 0 <= i < len(ranges)]
+        other = min(neighbours, key=lambda i: length(ranges[i]))
+        low, high = sorted((index, other))
+        ranges[low:high + 1] = [(ranges[low][0], ranges[high][1])]
+    return ranges
+
+
 def build_episode_plan(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID,
                        master_script_id: UUID, profile: str, story_format: str,
                        adaptation_kind: str = "full") -> dict:
@@ -77,7 +93,9 @@ def build_episode_plan(db: Session, client: LLMStageClient, run_id: UUID, series
     if used_fallback:
         repaired = _fallback_ranges(units, target)
         flat = [(0, None)] * len(repaired)
-    elif len(repaired) != len(flat):  # ranges were dropped as overlapped: re-pair by start unit
+    else:
+        repaired = merge_short(repaired, {u["number"]: u["screen_seconds"] for u in units}, target)
+    if not used_fallback and len(repaired) != len(flat):  # ranges were dropped as overlapped: re-pair by start unit
         by_start = {e.unit_from: (s, e) for s, e in flat}
         flat = [by_start.get(a, (flat[0][0], None)) for a, _ in repaired]
 

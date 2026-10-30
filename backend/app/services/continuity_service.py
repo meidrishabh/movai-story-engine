@@ -1,23 +1,27 @@
 """Continuity stage: per-event character/object states and contradictions."""
 import json
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.providers.llm_base import LLMAnalysisRequest
+from app.repositories.analysis_repository import list_source_chunks
 from app.schemas.llm_stages import ContinuityResult
 from app.services.llm_stage import LLMStageClient
 
 STAGE = "continuity"
+CHECK_STAGE = "continuity_check"
 WINDOW = 8  # events per model call, in chronological order; small so the model covers every event
 SEVERITIES = {"info", "warning", "error", "critical"}
+PASSAGE_WORDS = 2500  # source words shown with each window of events
 
 
 def build_continuity(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID,
                     snapshot: dict, profile: str, story_format: str) -> dict:
     events = db.execute(
-        text("""SELECT e.id, e.title, e.description, e.narrative_position, e.timeline_anchor_id
+        text("""SELECT e.id, e.title, e.description, e.narrative_position, e.timeline_anchor_id, e.source_references
                 FROM story_events e WHERE e.series_id = :s
                 ORDER BY e.chronological_position NULLS LAST, e.narrative_position"""),
         {"s": str(series_id)},
@@ -41,6 +45,9 @@ def build_continuity(db: Session, client: LLMStageClient, run_id: UUID, series_i
     last_object: dict[str, dict] = {}
     counts = {"character_states": 0, "object_states": 0, "conflicts": 0}
 
+    source_id = db.execute(text("SELECT source_id FROM analysis_runs WHERE id = :r"), {"r": str(run_id)}).scalar()
+    chunk_text = {c["chunk_id"]: c["text"] for c in list_source_chunks(db, source_id)}
+
     for start in range(0, len(events), WINDOW):
         window = events[start:start + WINDOW]
         request = LLMAnalysisRequest(
@@ -48,11 +55,20 @@ def build_continuity(db: Session, client: LLMStageClient, run_id: UUID, series_i
             task_input={
                 "events": [{"id": f"V{e['narrative_position']}", "title": e["title"],
                             "description": (e["description"] or "")[:400]} for e in window],
+                "passages": _passages(window, chunk_text),
                 "characters": people, "objects": things,
                 "previous_states": {"characters": last_character, "objects": last_object},
             },
         )
-        result: ContinuityResult = client.run(db, run_id, STAGE, f"{start // WINDOW + 1:04d}", request, ContinuityResult)
+        key = f"{start // WINDOW + 1:04d}"
+        result: ContinuityResult = client.run(db, run_id, STAGE, key, request, ContinuityResult)
+        # A separate call looks for contradictions: asking one call to extract states and hunt for conflicts
+        # made the model report only the first thing it noticed.
+        check_input = {**request.task_input,
+                       "states": {"characters": [s.model_dump(exclude_none=True) for s in result.character_states],
+                                  "objects": [s.model_dump(exclude_none=True) for s in result.object_states]}}
+        check: ContinuityResult = client.run(
+            db, run_id, CHECK_STAGE, key, replace(request, task="continuity_check", task_input=check_input), ContinuityResult)
 
         for state in result.character_states:
             event, entity = by_vid.get(state.event), characters.get(state.character)
@@ -90,7 +106,7 @@ def build_continuity(db: Session, client: LLMStageClient, run_id: UUID, series_i
             last_object[state.object] = {k: v for k, v in {
                 "owner": state.owner, "location": state.location, "condition": state.condition}.items() if v}
 
-        for conflict in result.conflicts:
+        for conflict in check.conflicts:
             entity = characters.get(conflict.entity or "") or objects.get(conflict.entity or "")
             kind = "character" if conflict.entity in characters else "object" if entity else None
             titles = ", ".join(by_vid[v]["title"] for v in conflict.events if v in by_vid)
@@ -107,6 +123,23 @@ def build_continuity(db: Session, client: LLMStageClient, run_id: UUID, series_i
             counts["conflicts"] += 1
     db.commit()
     return counts
+
+
+def _passages(window: list, chunk_text: dict[str, str]) -> list[dict]:
+    """Source text behind a window's events, so details the event summaries leave out (where an object is,
+    how old someone is) can be checked. Capped so the prompt stays small."""
+    passages, words = [], 0
+    for chunk_id in dict.fromkeys(ref.get("chunk_id") for e in window for ref in e["source_references"] or []):
+        body = chunk_text.get(chunk_id)
+        if not body:
+            continue
+        room = PASSAGE_WORDS - words
+        if room <= 0:
+            break
+        snippet = " ".join(body.split()[:room])
+        passages.append({"text": snippet})
+        words += len(snippet.split())
+    return passages
 
 
 def _str(value):
