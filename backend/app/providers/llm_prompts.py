@@ -142,7 +142,9 @@ JSON shape:
 
 FILLER_SYSTEM_PROMPT = _DATA_NOTE + """You shorten a story adaptation by finding FILLER only, so the story stays intact.
 
-Input: "units" (numbered, each with title, synopsis, numbered "beats" and screen_seconds).
+Input: "units" (numbered, each with title, synopsis, numbered "beats" and screen_seconds) and "story_profile" (what this kind of story values: follow its "protect" and "filler" lists).
+
+You only PROPOSE candidates. A second reviewer with the full story context checks every one before anything is removed, so list every beat that plausibly is filler, but never list the NEVER items below.
 
 Filler means: repeats of something already shown, lingering description or travel with no plot change, extra chatter that adds nothing new, a second example of the same point.
 NEVER remove: plot points, reveals, decisions, character introductions, setup that is paid off later, emotional turning points, or the first time anything important is shown.
@@ -151,13 +153,24 @@ NEVER remove: plot points, reveals, decisions, character introductions, setup th
 - A choice a character makes, or the moment a character changes their mind, is never filler even if it looks repetitive.
 - A beat that does two things (for example a farewell AND setting off on the next stage) is never filler, because one part still moves the story. Departures, arrivals, losses, farewells, discoveries, and the beat that hands the story to the next unit are never filler.
 - Only these count as filler: a description of scenery or objects that changes nothing, a second telling of something already shown, small talk, or one more example of an idea already made clear.
-- When you are unsure whether something matters later, keep it.
-- If nothing is filler, return an empty list. Do not remove things just to hit a length.
+- If nothing is filler, return an empty list. Do not propose things just to hit a length.
 
 JSON shape:
 {"removals": [{"unit": 2, "beat": 3, "reason": "", "seconds_saved": 20}]}"""
 
-HIGHLIGHT_SYSTEM_PROMPT = _DATA_NOTE + """You write a trailer or teaser script from a story's master script.
+FILLER_JUDGE_SYSTEM_PROMPT = _DATA_NOTE + """You are the second reviewer in cutting filler from a story adaptation. Another reader proposed that some beats may be removable. You decide, using the whole story's context.
+
+Input: "story_summary", "story_profile" (what this kind of story values), "characters" (name, description), and "candidates". Each candidate has an "id", the "beat" proposed for removal (or the whole unit), "before" and "after" (the beats around it), "previous_unit" and "next_unit", and "reused_later": names of people or objects in the beat that appear again in later units (a computed fact, not an opinion).
+
+For each candidate decide:
+- "cut": removing it loses nothing the audience needs. The story, the characters' arcs and any later payoff still work.
+- "keep": it adds something that matters: a setup, a clue, character development, an emotional beat, tone the story depends on, or something later scenes refer to. A name in "reused_later" is a strong sign of setup or payoff; keep unless the reuse clearly does not depend on this beat.
+Judge each candidate on its own merits. Give a one-sentence reason that names what is lost or why nothing is lost. When it is a close call, "keep".
+
+JSON shape:
+{"verdicts": [{"id": "K1", "verdict": "cut", "reason": ""}]}"""
+
+HIGHLIGHT_SYSTEM_PROMPT = _DATA_NOTE +"""You write a trailer or teaser script from a story's master script.
 
 Input: "kind" (trailer or teaser), "target_seconds", "units" (numbered, with title, synopsis, beats, screen_seconds), "characters", and "story_summary".
 
@@ -177,7 +190,8 @@ STAGE_PROMPTS = {
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
     "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v4"),
-    "filler": (FILLER_SYSTEM_PROMPT, "filler-v3"),
+    "filler": (FILLER_SYSTEM_PROMPT, "filler-v4"),
+    "filler_judge": (FILLER_JUDGE_SYSTEM_PROMPT, "filler-judge-v1"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }
 

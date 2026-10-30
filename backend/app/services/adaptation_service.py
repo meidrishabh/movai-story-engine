@@ -1,5 +1,6 @@
 """Adaptation options: full, concentrated (filler removed), trailer and teaser."""
 import json
+import re
 from uuid import UUID
 
 from sqlalchemy import text
@@ -7,11 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import PermanentJobError
 from app.providers.llm_base import LLMAnalysisRequest
-from app.schemas.llm_stages import FillerResult, HighlightResult
+from app.schemas.llm_stages import FillerResult, HighlightResult, JudgeResult
 from app.services.llm_stage import LLMStageClient
+from app.services.metrics import log_decision, record_metric
+from app.services.story_profiles import resolve_profile
 
 FILLER_WINDOW = 40  # units per model call
 MAX_SAVED_SHARE = 0.6  # a removed beat may not take more than this share of its unit
+JUDGE_BATCH = 8  # candidates per judge call
+CONTEXT_BEATS = 2  # beats shown before and after a candidate
+MAIN_SHARE = 0.5  # people in more than this share of units are leads and do not count as reused later
 BOUNDS = {"trailer": (60, 240), "teaser": (10, 59)}
 DEFAULT_SECONDS = {"trailer": 120, "teaser": 45}
 
@@ -76,17 +82,67 @@ def build_full(db: Session, series_id: UUID, master_script_id) -> dict:
     return {"duration_seconds": total, "units": len(units)}
 
 
+def _terms(name: str) -> set[str]:
+    """Full name plus the longer words of a multi-word name, lower-cased."""
+    name = name.strip().lower()
+    terms = {name}
+    if len(name.split()) > 1:
+        terms.update(w for w in re.split(r"\W+", name) if len(w) >= 5)
+    return {t for t in terms if len(t) >= 3}
+
+
+def _mentions(terms: set[str], text_: str) -> bool:
+    return any(re.search(rf"\b{re.escape(t)}\b", text_) for t in terms)
+
+
+def _reuse_index(db: Session, series_id: UUID, units: list[dict]) -> tuple[dict, list[dict]]:
+    """People and objects that come back in later units, and the most mentioned characters."""
+    unit_text = {u["number"]: " ".join([u["title"], u["synopsis"], *u["beats"]]).lower() for u in units}
+    index: dict[str, tuple[set[str], set[int]]] = {}
+    characters = []
+    for table, is_character in (("characters", True), ("continuity_objects", False)):
+        rows = db.execute(
+            text(f"SELECT name, description FROM {table} WHERE series_id = :s AND merged_into_id IS NULL "
+                 "AND review_status <> 'stale'"), {"s": str(series_id)}).all()
+        for name, description in rows:
+            terms = _terms(name)
+            numbers = {n for n, t in unit_text.items() if _mentions(terms, t)}
+            if is_character:
+                characters.append({"name": name, "description": (description or "")[:100], "units": len(numbers)})
+            if numbers and len(numbers) <= MAIN_SHARE * len(units):  # leads appear everywhere and prove nothing
+                index[name] = (terms, numbers)
+    characters.sort(key=lambda c: -c["units"])
+    return index, [{k: c[k] for k in ("name", "description")} for c in characters[:15]]
+
+
+def _reused_later(index: dict, unit_number: int, beat_text: str) -> list[str]:
+    return [name for name, (terms, numbers) in index.items()
+            if _mentions(terms, beat_text.lower()) and any(n > unit_number for n in numbers)]
+
+
+def _brief(unit: dict | None) -> str | None:
+    return None if unit is None else f"{unit['title']}: {unit['synopsis'][:160]}"
+
+
 def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID, master_script_id,
                   profile: str, story_format: str) -> dict:
-    """Mark removable beats; the concentrated adaptation is the master script minus these."""
+    """Find removable beats in two passes. Pass 1 proposes; a second reviewer with the story's context judges
+    each one blind, and a code check looks for people and objects that return later. A beat is removed only when
+    all agree; anything else stays in the story as a disputed marker the user can act on."""
     units = load_units(db, master_script_id)
     by_number = {u["number"]: u for u in units}
-    removed: list[dict] = []
+    script = latest_master_script(db, series_id)
+    genre = db.execute(text("SELECT genre FROM series WHERE id = :s"), {"s": str(series_id)}).scalar()
+    profile_key, story_profile = resolve_profile(genre)
+    shown_profile = {k: story_profile[k] for k in ("label", "protect", "filler")}
+
+    proposals: list[dict] = []
     for start in range(0, len(units), FILLER_WINDOW):
         window = units[start:start + FILLER_WINDOW]
         request = LLMAnalysisRequest(
             task="filler", profile=profile, context_chunks=[], known_entities={}, story_format=story_format,
-            task_input={"units": [{"number": u["number"], "title": u["title"], "synopsis": u["synopsis"][:200],
+            task_input={"story_profile": shown_profile,
+                        "units": [{"number": u["number"], "title": u["title"], "synopsis": u["synopsis"][:200],
                                    "beats": [f"{i}. {b}" for i, b in enumerate(u["beats"], start=1)],
                                    "screen_seconds": u["screen_seconds"]} for u in window]})
         key = f"{master_script_id}:{start // FILLER_WINDOW + 1:04d}"
@@ -102,9 +158,58 @@ def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: 
             seconds = unit["screen_seconds"] if whole else min(seconds, unit["screen_seconds"] * MAX_SAVED_SHARE)
             if seconds <= 0:
                 continue
-            removed.append({"unit": item.unit, "unit_title": unit["title"], "beat": item.beat,
-                            "beat_text": None if whole else unit["beats"][item.beat - 1],
-                            "reason": item.reason or "", "seconds": int(seconds)})
+            proposals.append({"unit": item.unit, "unit_title": unit["title"], "beat": item.beat,
+                              "beat_text": None if whole else unit["beats"][item.beat - 1],
+                              "reason": item.reason or "", "seconds": int(seconds)})
+
+    index, characters = _reuse_index(db, series_id, units)
+    candidates = []
+    for number, item in enumerate(proposals, start=1):
+        unit, beat = by_number[item["unit"]], item["beat"]
+        subject = item["beat_text"] or " ".join([unit["title"], unit["synopsis"], *unit["beats"]])
+        candidates.append({
+            **item, "id": f"K{number}", "reused_later": _reused_later(index, item["unit"], subject),
+            "before": [] if beat is None else unit["beats"][max(0, beat - 1 - CONTEXT_BEATS):beat - 1],
+            "after": [] if beat is None else unit["beats"][beat:beat + CONTEXT_BEATS],
+            "previous_unit": _brief(by_number.get(item["unit"] - 1)), "next_unit": _brief(by_number.get(item["unit"] + 1)),
+        })
+
+    verdicts: dict[str, object] = {}
+    for start in range(0, len(candidates), JUDGE_BATCH):
+        batch = candidates[start:start + JUDGE_BATCH]
+        request = LLMAnalysisRequest(
+            task="filler_judge", profile=profile, context_chunks=[], known_entities={}, story_format=story_format,
+            task_input={"story_summary": (script["summary"] if script else "") or "", "story_profile": shown_profile,
+                        "characters": characters,
+                        "candidates": [{"id": c["id"], "unit": c["unit"], "unit_title": c["unit_title"],
+                                        "beat": c["beat_text"] or "(the whole unit)", "before": c["before"],
+                                        "after": c["after"], "previous_unit": c["previous_unit"],
+                                        "next_unit": c["next_unit"], "reused_later": c["reused_later"]}
+                                       for c in batch]})
+        result: JudgeResult = client.run(db, run_id, "filler_judge", f"{master_script_id}:j{start // JUDGE_BATCH + 1:04d}",
+                                         request, JudgeResult)
+        verdicts.update({v.id: v for v in result.verdicts})
+
+    removed: list[dict] = []
+    disputed: list[dict] = []
+    db.execute(text("DELETE FROM feedback_events WHERE analysis_run_id = :r AND stage = 'filler' AND actor = 'pipeline'"),
+               {"r": str(run_id)})
+    for candidate in candidates:
+        verdict = verdicts.get(candidate["id"])
+        judge_cut = verdict is not None and str(verdict.verdict).strip().lower() == "cut"
+        item = {k: candidate[k] for k in ("unit", "unit_title", "beat", "beat_text", "reason", "seconds")}
+        item.update(judge_reason=(verdict.reason if verdict else "") or "", reused_later=candidate["reused_later"])
+        if judge_cut and not candidate["reused_later"]:
+            removed.append(item)
+            decision = "removed"
+        else:
+            item["why"] = "reused_later" if judge_cut else "judge_keep" if verdict else "judge_missing"
+            disputed.append(item)
+            decision = "disputed"
+        log_decision(db, series_id, run_id, "filler", {"unit": item["unit"], "beat": item["beat"]}, decision, "pipeline",
+                     {"pass1_reason": item["reason"], "judge_verdict": verdict.verdict if verdict else None,
+                      "judge_reason": item["judge_reason"], "reused_later": item["reused_later"],
+                      "story_profile": profile_key})
 
     # A unit can lose at most its whole length, however many beats were flagged.
     saved: dict[int, int] = {}
@@ -113,8 +218,15 @@ def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: 
     full_total = sum(u["screen_seconds"] for u in units)
     total = full_total - sum(saved.values())
     _upsert(db, series_id, "concentrated", master_script_id=master_script_id, duration_seconds=total, status="ready",
-            content={"removed": removed, "saved_seconds": sum(saved.values()), "full_seconds": full_total})
-    return {"removed": len(removed), "saved_seconds": sum(saved.values()), "duration_seconds": total}
+            content={"removed": removed, "disputed": disputed, "saved_seconds": sum(saved.values()),
+                     "full_seconds": full_total, "story_profile": profile_key})
+    for name, value in (("candidates", len(candidates)), ("removed", len(removed)), ("disputed", len(disputed)),
+                        ("agreement_rate", len(removed) / len(candidates) if candidates else 1.0),
+                        ("saved_share", sum(saved.values()) / full_total if full_total else 0.0)):
+        record_metric(db, series_id, run_id, "filler", name, value, {"story_profile": profile_key})
+    db.commit()
+    return {"removed": len(removed), "disputed": len(disputed), "saved_seconds": sum(saved.values()),
+            "duration_seconds": total}
 
 
 def effective_units(db: Session, series_id: UUID, master_script_id, kind: str) -> list[dict]:

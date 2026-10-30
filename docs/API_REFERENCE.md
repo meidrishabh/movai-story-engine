@@ -53,7 +53,7 @@ Supported uploads: Markdown and text-layer PDF. OCR is rejected.
 | POST | `/episode-plans/{plan_id}/reject` | Reject a draft plan (optional `review_note`) |
 | POST | `/episodes/{episode_id}/breakdown` | Queue a scene/shot/dialogue breakdown job (202) |
 | GET | `/episodes/{episode_id}/breakdown` | Scenes with dialogue and shots for an episode |
-| GET | `/series/{series_id}/adaptations` | Full, concentrated, trailer and teaser options: duration, status, `available` (already generated and current), `selected`, filler removed, trailer/teaser summary |
+| GET | `/series/{series_id}/adaptations` | Full, concentrated, trailer and teaser options: duration, status, `available` (already generated and current), `selected`, `removed` beats (proposed, judged and not reused later), `disputed` beats (kept in the story, with reasons), trailer/teaser summary |
 | PUT | `/series/{series_id}/adaptation-selection` | Save the choice: `main` (`full` or `concentrated`), optional `trailer_seconds` (60-240) and `teaser_seconds` (10-59). Returns `to_generate` for extras that do not exist yet |
 | POST | `/series/{series_id}/adaptations/{kind}/generate` | Queue generation (`concentrated`, `trailer` or `teaser`, optional `target_seconds`); regenerates when it already exists (202) |
 | POST | `/series/{series_id}/episode-plans/generate` | Re-plan seasons and episodes for the selected main adaptation (202); refused if episodes are approved for a different adaptation |

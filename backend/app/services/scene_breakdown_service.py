@@ -13,6 +13,7 @@ from app.repositories.analysis_repository import list_source_chunks
 from app.schemas.llm_stages import SceneBreakdownResult
 from app.services.adaptation_service import removed_beats
 from app.services.llm_stage import LLMStageClient
+from app.services.metrics import record_metric
 from app.services.story_analysis_service import detect_story_format
 
 STAGE = "scene_breakdown"
@@ -101,5 +102,11 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
             shot_total += 1
     db.commit()
     shot_seconds = sum(shot.duration_seconds or 0 for scene in scenes for shot in scene.shots)
+    if episode["target_duration_seconds"]:  # planned vs actual screen time, the basis for calibrating duration estimates
+        record_metric(db, episode["series_id"], run["id"], "breakdown", f"shot_coverage:{episode_id}",
+                      shot_seconds / episode["target_duration_seconds"],
+                      {"shot_seconds": shot_seconds, "target_seconds": episode["target_duration_seconds"],
+                       "shots": shot_total})
+        db.commit()
     return {"scenes": len(scenes), "shots": shot_total, "shot_seconds": shot_seconds,
             "target_seconds": episode["target_duration_seconds"]}

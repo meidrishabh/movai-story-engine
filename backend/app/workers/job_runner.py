@@ -136,6 +136,7 @@ def run_adaptation(db, job):
         if kind == "concentrated":
             script = latest_master_script(db, series_id)
             client.forget(db, run_id, "filler", f"{script['id']}:")
+            client.forget(db, run_id, "filler_judge", f"{script['id']}:")
             result = detect_filler(db, client, run_id, series_id, script["id"], profile, story_format)
         else:
             client.forget(db, run_id, "highlight", f"{kind}:")
