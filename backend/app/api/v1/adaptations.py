@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.v1.entities import _series_owned
-from app.services.adaptation_service import BOUNDS, DEFAULT_SECONDS, build_full, latest_master_script, selected_main
+from app.core.errors import PermanentJobError
+from app.services.adaptation_service import (
+    BOUNDS, DEFAULT_SECONDS, apply_user_decision, build_full, latest_master_script, selected_main)
 
 router = APIRouter(prefix="/api/v1", tags=["adaptations"])
 
@@ -22,6 +24,12 @@ class SelectionRequest(BaseModel):
     main: Literal["full", "concentrated"]
     trailer_seconds: int | None = Field(default=None, description="Set to include a trailer (60-240 seconds)")
     teaser_seconds: int | None = Field(default=None, description="Set to include a teaser (10-59 seconds)")
+
+
+class BeatDecision(BaseModel):
+    unit: int
+    beat: int | None = Field(default=None, description="Beat number inside the unit; empty for a whole-unit removal")
+    action: Literal["keep", "cut"]
 
 
 class GenerateRequest(BaseModel):
@@ -75,6 +83,7 @@ def _options(db: Session, series_id: UUID) -> list[dict]:
         if kind == "concentrated":
             item["removed"] = content.get("removed", []) if ready else []
             item["disputed"] = content.get("disputed", []) if ready else []
+            item["restored"] = content.get("restored", []) if ready else []
             item["saved_seconds"] = content.get("saved_seconds") if ready else None
         items.append(item)
     return items
@@ -138,6 +147,27 @@ def generate_adaptation(series_id: UUID, kind: Literal["concentrated", "trailer"
     job = _queue(db, "adaptation_generation", {"series_id": str(series_id), "kind": kind, "target_seconds": seconds})
     db.commit()
     return job
+
+
+@router.put("/series/{series_id}/adaptations/concentrated/beats")
+def decide_beat(series_id: UUID, payload: BeatDecision, db: Session = Depends(get_db)):
+    """Keep a removed beat (action keep) or cut a disputed one (action cut). Episode plans and breakdowns built from
+    the old cut are not changed here; `affected_episodes` lists the approved episodes that contain the unit."""
+    _series_owned(db, series_id)
+    try:
+        result = apply_user_decision(db, series_id, payload.unit, payload.beat, payload.action)
+    except LookupError as error:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermanentJobError as error:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    result["affected_episodes"] = [str(r[0]) for r in db.execute(
+        text("""SELECT e.id FROM episodes e JOIN story_units u ON u.id = ANY(e.source_unit_ids)
+                WHERE e.series_id = :s AND u.sequence_number = :n AND u.master_script_id = (
+                    SELECT master_script_id FROM adaptations WHERE series_id = :s AND kind = 'concentrated')"""),
+        {"s": str(series_id), "n": payload.unit})]
+    return result
 
 
 @router.post("/series/{series_id}/episode-plans/generate", status_code=202)

@@ -192,42 +192,96 @@ def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: 
 
     removed: list[dict] = []
     disputed: list[dict] = []
+    restored: list[dict] = []
     db.execute(text("DELETE FROM feedback_events WHERE analysis_run_id = :r AND stage = 'filler' AND actor = 'pipeline'"),
                {"r": str(run_id)})
+    # What the user decided earlier wins over this run's verdict; beats are matched by their text because
+    # beat numbers change when the master script is rebuilt.
+    user_decisions = dict(db.execute(
+        text("""SELECT DISTINCT ON (item_ref ->> 'beat_text') item_ref ->> 'beat_text', decision FROM feedback_events
+                WHERE series_id = :s AND stage = 'filler' AND actor = 'user'
+                ORDER BY item_ref ->> 'beat_text', created_at DESC"""), {"s": str(series_id)}).all())
     for candidate in candidates:
         verdict = verdicts.get(candidate["id"])
         judge_cut = verdict is not None and str(verdict.verdict).strip().lower() == "cut"
         item = {k: candidate[k] for k in ("unit", "unit_title", "beat", "beat_text", "reason", "seconds")}
         item.update(judge_reason=(verdict.reason if verdict else "") or "", reused_later=candidate["reused_later"])
-        if judge_cut and not candidate["reused_later"]:
+        by_user = user_decisions.get(candidate["beat_text"]) if candidate["beat_text"] else None
+        if by_user == "removed":
+            removed.append({**item, "by": "user"})
+            decision = "removed"
+        elif by_user == "restored":
+            restored.append({**item, "by": "user"})
+            decision = "restored"
+        elif judge_cut and not candidate["reused_later"]:
             removed.append(item)
             decision = "removed"
         else:
             item["why"] = "reused_later" if judge_cut else "judge_keep" if verdict else "judge_missing"
             disputed.append(item)
             decision = "disputed"
-        log_decision(db, series_id, run_id, "filler", {"unit": item["unit"], "beat": item["beat"]}, decision, "pipeline",
+        log_decision(db, series_id, run_id, "filler", {"unit": item["unit"], "beat": item["beat"],
+                                                        "beat_text": item["beat_text"]}, decision, "pipeline",
                      {"pass1_reason": item["reason"], "judge_verdict": verdict.verdict if verdict else None,
                       "judge_reason": item["judge_reason"], "reused_later": item["reused_later"],
                       "story_profile": profile_key, "proposal_model": provider_model(client.provider),
                       "judge_model": provider_model(client.judge_provider or client.provider)})
 
-    # A unit can lose at most its whole length, however many beats were flagged.
-    saved: dict[int, int] = {}
-    for item in removed:
-        saved[item["unit"]] = min(by_number[item["unit"]]["screen_seconds"], saved.get(item["unit"], 0) + item["seconds"])
-    full_total = sum(u["screen_seconds"] for u in units)
-    total = full_total - sum(saved.values())
+    content = {"removed": removed, "disputed": disputed, "restored": restored, "story_profile": profile_key}
+    total = _totals(content, units)
     _upsert(db, series_id, "concentrated", master_script_id=master_script_id, duration_seconds=total, status="ready",
-            content={"removed": removed, "disputed": disputed, "saved_seconds": sum(saved.values()),
-                     "full_seconds": full_total, "story_profile": profile_key})
+            content=content)
+    saved_total, full_total = content["saved_seconds"], content["full_seconds"]
     for name, value in (("candidates", len(candidates)), ("removed", len(removed)), ("disputed", len(disputed)),
                         ("agreement_rate", len(removed) / len(candidates) if candidates else 1.0),
-                        ("saved_share", sum(saved.values()) / full_total if full_total else 0.0)):
+                        ("saved_share", saved_total / full_total if full_total else 0.0)):
         record_metric(db, series_id, run_id, "filler", name, value, {"story_profile": profile_key})
     db.commit()
-    return {"removed": len(removed), "disputed": len(disputed), "saved_seconds": sum(saved.values()),
+    return {"removed": len(removed), "disputed": len(disputed), "saved_seconds": saved_total,
             "duration_seconds": total}
+
+
+def _totals(content: dict, units: list[dict]) -> int:
+    """Fill in saved and full seconds from the removed beats and return the concentrated duration.
+    A unit can lose at most its whole length, however many beats were flagged."""
+    by_number = {u["number"]: u for u in units}
+    saved: dict[int, int] = {}
+    for item in content["removed"]:
+        unit = by_number.get(item["unit"])
+        if unit:
+            saved[item["unit"]] = min(unit["screen_seconds"], saved.get(item["unit"], 0) + item["seconds"])
+    content["saved_seconds"] = sum(saved.values())
+    content["full_seconds"] = sum(u["screen_seconds"] for u in units)
+    return content["full_seconds"] - content["saved_seconds"]
+
+
+def apply_user_decision(db: Session, series_id: UUID, unit: int, beat: int | None, action: str) -> dict:
+    """The user keeps a removed beat or cuts a disputed one. The decision is logged and survives regeneration."""
+    row = db.execute(
+        text("""SELECT master_script_id, content FROM adaptations WHERE series_id = :s AND kind = 'concentrated'
+                AND status = 'ready' FOR UPDATE"""), {"s": str(series_id)}).mappings().first()
+    if row is None:
+        raise PermanentJobError("The concentrated adaptation has not been generated yet")
+    content = row["content"]
+    for key in ("removed", "disputed", "restored"):
+        content.setdefault(key, [])
+    source, target = (("removed", "restored") if action == "keep" else ("disputed", "removed"))
+    found = next((i for i in content[source] if i["unit"] == unit and i.get("beat") == beat), None)
+    if found is None and action == "cut":  # a beat the user earlier restored can be cut again
+        source = "restored"
+        found = next((i for i in content[source] if i["unit"] == unit and i.get("beat") == beat), None)
+    if found is None:
+        raise LookupError("That beat is not in the list it would move from")
+    content[source].remove(found)
+    content[target].append({**found, "by": "user"})
+    total = _totals(content, load_units(db, row["master_script_id"]))
+    _upsert(db, series_id, "concentrated", master_script_id=row["master_script_id"], duration_seconds=total,
+            status="ready", content=content)
+    log_decision(db, series_id, None, "filler", {"unit": unit, "beat": beat, "beat_text": found.get("beat_text")},
+                 "restored" if action == "keep" else "removed", "user",
+                 {"from": source, "pass1_reason": found.get("reason"), "judge_reason": found.get("judge_reason")})
+    db.commit()
+    return {"duration_seconds": total, **{k: content[k] for k in ("removed", "disputed", "restored", "saved_seconds")}}
 
 
 def effective_units(db: Session, series_id: UUID, master_script_id, kind: str) -> list[dict]:
