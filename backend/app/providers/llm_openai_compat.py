@@ -17,7 +17,9 @@ from app.providers.llm_prompts import (
     ENTITY_PROMPT_VERSION,
     RESOLUTION_PROMPT_VERSION,
     build_entity_messages,
+    STAGE_PROMPTS,
     build_resolution_messages,
+    build_stage_messages,
     chunk_label,
 )
 
@@ -58,6 +60,8 @@ class OpenAICompatLLMProvider:
             messages, version = build_entity_messages(request), ENTITY_PROMPT_VERSION
         elif request.task == "entity_resolution":
             messages, version = build_resolution_messages(request), RESOLUTION_PROMPT_VERSION
+        elif request.task in STAGE_PROMPTS:
+            messages, version = build_stage_messages(request), STAGE_PROMPTS[request.task][1]
         else:
             raise NotImplementedError(f"Task '{request.task}' is not supported yet")
 
@@ -79,6 +83,8 @@ class OpenAICompatLLMProvider:
             payload = parse_json_object(content)
             if request.task == "entity_extraction":
                 payload = attach_references(clean_payload(payload), request.context_chunks)
+            elif request.task == "master_script":
+                payload = attach_unit_references(payload, request.context_chunks)
             return LLMAnalysisResponse(
                 provider="openai_compat",
                 model=model,
@@ -205,6 +211,17 @@ def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payload["analysis_notes"] = []
     if not isinstance(payload.get("story_so_far"), str):
         payload["story_so_far"] = ""
+    return payload
+
+
+def attach_unit_references(payload: dict[str, Any], chunks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Map the model's passage labels on master-script units to source_references."""
+    by_label = {chunk_label(index): chunk_reference(chunk) for index, chunk in enumerate(chunks)}
+    units = payload.get("units")
+    payload["units"] = [u for u in units if isinstance(u, dict)] if isinstance(units, list) else []
+    for unit in payload["units"]:
+        refs = unit.pop("chunk_refs", None) or []
+        unit["source_references"] = [by_label[r] for r in refs if isinstance(r, str) and r in by_label]
     return payload
 
 

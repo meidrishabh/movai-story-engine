@@ -77,6 +77,7 @@ def save_entities(db: Session, series_id: UUID, run_id: UUID, snapshot: dict) ->
         entities = snapshot[list_name]
         for entity in entities:
             ids[entity["eid"]] = _upsert(db, kind, series_id, run_id, entity)
+            entity["db_id"] = str(ids[entity["eid"]])  # later stages map E/L/O ids to rows with this
             for alias in entity["aliases"]:
                 db.execute(
                     text(

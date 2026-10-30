@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 
@@ -18,6 +18,8 @@ class LLMAnalysisRequest:
     known_entities: dict[str, Any]
     story_so_far: str = ""
     story_format: str = "novel"
+    # Stage-specific input (events to order, units to plan, ...), sent to the model as JSON.
+    task_input: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
