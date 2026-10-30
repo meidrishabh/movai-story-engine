@@ -4,15 +4,15 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { Loading } from '../../shared/ui'
 import { useSeries, useSeriesId } from '../../features/series/api'
 
-/** Steps in story order. `ready: false` items are on the roadmap and shown, but not clickable yet. */
+/** Steps in story order. `ready: true` items are on the roadmap and shown, but not clickable yet. */
 const STEPS = [
   { to: 'upload', label: 'Upload', ready: true },
   { to: 'pipeline', label: 'Pipeline', ready: true },
-  { to: 'characters', label: 'Characters & places', ready: false },
-  { to: 'structure', label: 'Story structure', ready: false },
+  { to: 'characters', label: 'Characters & places', ready: true },
+  { to: 'structure', label: 'Story structure', ready: true },
   { to: 'adaptation', label: 'Adaptation', ready: true },
   { to: 'plans', label: 'Episode plans', ready: true },
-  { to: 'breakdown', label: 'Episode breakdown', ready: false },
+  { to: 'breakdown', label: 'Episode breakdown', ready: true },
 ] as const
 
 export function SeriesLayout() {
