@@ -28,3 +28,7 @@ We will acknowledge valid reports, investigate them, and coordinate disclosure a
 - Keep PostgreSQL and other local services bound to trusted interfaces.
 - Use separate development credentials rather than production credentials.
 - Rotate any credential that may have been exposed.
+
+## Story content and LLM providers
+
+Story text is sent to the configured LLM provider during analysis. Free-tier hosted models may log prompts or use them to improve the vendor's products. Use them only with test or non-confidential stories, and use a paid or local provider for real manuscripts. Never paste API keys into issues, chats or commits; keep them in `backend/.env`, and rotate a key if it may have been exposed.

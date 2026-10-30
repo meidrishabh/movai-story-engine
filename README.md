@@ -33,7 +33,7 @@ Upload or paste story
 → Plan episodes
 ```
 
-Real LLM story analysis is not connected yet. The structured LLM interface and mock provider are available for pipeline testing.
+Entity extraction runs through a configurable LLM (see [LLM configuration](#llm-configuration)). The later stages (timeline, continuity, master script, duration, season and episode planning) are not built yet.
 
 ## Technology
 
@@ -98,7 +98,7 @@ The database uses pgvector for story embeddings.
 Migrations currently exist through:
 
 ```text
-020_embedding_generation_jobs.sql
+022_entity_identity.sql
 ```
 
 Important database areas:
@@ -144,20 +144,30 @@ EMBEDDING_PROVIDER=local
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
-The database password should not be committed to source control.
+Copy `backend/.env.example` to start. All settings (including the LLM ones below) are read from this file. The database password and API keys should not be committed to source control.
 
 ## Running the backend
 
-From `C:\MovAi\backend`:
+Analysis runs as background jobs, so two processes are needed: the API and the job runner. From `C:\MovAi\backend`:
+
+```powershell
+powershell -File .\dev.ps1     # opens both in separate windows
+```
+
+Or by hand, in two terminals:
 
 ```powershell
 uvicorn app.main:app --reload
+python -m app.workers.job_runner
 ```
+
+Without the job runner, uploaded stories stay "queued". `python -m app.workers.job_runner --once` processes the queue and exits.
 
 The application is available at:
 
 - API: `http://127.0.0.1:8000`
 - UI: `http://127.0.0.1:8000/ui/`
+- Entity review: `http://127.0.0.1:8000/ui/review.html`
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 - Database health: `http://127.0.0.1:8000/health/db`
@@ -231,33 +241,37 @@ Do not mix vectors from different models in retrieval. The application stores mo
 
 ## Processing jobs
 
-Development job execution is currently exposed through:
+Jobs live in `generation_jobs` and are run by the job runner (`python -m app.workers.job_runner`), which claims queued jobs safely, retries failures with a growing delay, fails permanent errors (bad API key, call limit reached) at once, and requeues jobs whose worker went silent.
 
 ```text
 GET  /api/v1/jobs/{job_id}
-POST /api/v1/jobs/{job_id}/run-mock
 POST /api/v1/jobs/{job_id}/cancel
+POST /api/v1/jobs/{job_id}/run-mock      # development only, mock-provider jobs
 ```
 
-Embedding jobs use the `embedding_generation` job type.
+Job types handled by the runner: `embedding_generation` and `story_analysis`.
 
-Story analysis jobs use the `story_analysis` job type.
+## LLM configuration
 
-The current job runner is development-only. A real persistent worker queue is still needed for production.
+Set in `backend/.env` (see `backend/.env.example`):
+
+```env
+LLM_PROVIDER=openai_compat
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+LLM_MODEL=<model name>
+LLM_API_KEY=<your key>
+LLM_MIN_INTERVAL_SECONDS=6
+```
+
+Any OpenAI-style endpoint works (Gemini, OpenRouter, Ollama). With `LLM_PROVIDER=mock` (the default) a crude offline guesser is used. Free-tier models may use prompts for training, so use them with test stories only. Before queueing, `GET /api/v1/series/{id}/analysis-estimate` shows the expected number of calls.
+
+A sample story for trying the pipeline is in `docs/samples/happy_flow_story.md`.
 
 ## Structured story analysis
 
-The first structured analysis stage is entity extraction. Its provider contract supports:
+Entity extraction reads the whole story in batches and produces characters, locations, objects, events and relationships, each with a quoted piece of evidence checked against the source text. Entities keep stable ids across batches, same-named characters are kept apart by a disambiguation label, and a final pass looks for entries that are the same entity under different names. Results are saved to the database, and uncertain items are marked `needs_review`.
 
-- Characters
-- Locations
-- Objects/artifacts
-- Events
-- Relationships
-- Source references
-- Confidence values
-
-Current mock analysis returns schema-valid placeholder output. A real LLM provider must be connected before meaningful story analysis can be generated.
+Review them at `/ui/review.html`: approve, edit, merge or unmerge. Hand edits and approvals are kept when the story is analysed again. Details are in [Story Processing Specification](docs/STORY_PROCESSING_SPEC.md).
 
 ## Current status
 
@@ -276,20 +290,19 @@ Completed:
 - Model-aware retrieval
 - Complexity analysis
 - Analysis stage/output persistence
-- Structured LLM provider interface
-- Mock entity-extraction stage
+- Structured LLM provider interface and an OpenAI-compatible adapter
+- Postgres-backed job runner with retries and resume
+- Whole-story entity extraction with quote verification
+- Entity resolution, alias merging, and persistence of characters, locations and objects
+- Entity review API and page
 
 Not completed:
 
-- Real LLM provider
-- Full entity persistence pipeline
-- Entity resolution and alias merging
 - Timeline and causal graph generation
 - Continuity extraction and conflict resolution
 - Master-script generation
 - Duration generation from analyzed story
 - Season and episode AI segmentation
-- Production-grade worker queue
 - Production authentication
 - Automated test suite
 

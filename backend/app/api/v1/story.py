@@ -3,13 +3,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.core.config import DEV_USER_EMAIL
+from app.core.settings import settings
 from app.repositories.analysis_repository import (
     create_analysis_run,
     get_latest_analysis_run,
+    list_source_chunks,
     record_complexity_output,
 )
 from app.schemas.story import (
@@ -19,6 +22,7 @@ from app.schemas.story import (
     StorySourceCreate,
 )
 from app.services.document_ingestion import prepare_source_document
+from app.services.story_analysis_service import estimate_analysis
 
 
 router = APIRouter(prefix="/api/v1", tags=["story"])
@@ -212,11 +216,29 @@ def analyze_series_story(
     if series_exists is None:
         raise HTTPException(status_code=404, detail="Series was not found")
 
+    active_run = db.execute(
+        text("SELECT id FROM analysis_runs WHERE series_id = :series_id AND status IN ('queued', 'running') LIMIT 1"),
+        {"series_id": str(series_id)},
+    ).scalar()
+    if active_run is not None:
+        raise HTTPException(status_code=409, detail=f"An analysis is already in progress (run {active_run})")
+    estimate = estimate_analysis(list_source_chunks(db, source_id))
+    if not estimate["within_call_limit"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This story needs about {estimate['llm_calls']} LLM calls, above the limit of "
+                   f"{estimate['max_calls_allowed']} (LLM_MAX_CALLS_PER_RUN).",
+        )
+
     profile = db.execute(
         text("SELECT COALESCE(analysis_profile, 'standard') FROM series WHERE id = :series_id"),
         {"series_id": str(series_id)},
     ).scalar_one()
-    analysis_run = create_analysis_run(db, series_id, source_id, profile)
+    try:
+        analysis_run = create_analysis_run(db, series_id, source_id, profile)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An analysis is already in progress")
     complexity = db.execute(
         text("SELECT COALESCE(analysis_complexity, '{}'::jsonb) FROM series WHERE id = :series_id"),
         {"series_id": str(series_id)},
@@ -230,13 +252,15 @@ def analyze_series_story(
                 request_metadata, max_attempts
             )
             VALUES (
-                'story_analysis', 'queued', 'mock', 'mock-story-analyzer-v1',
-                CAST(:request_metadata AS jsonb), 1
+                'story_analysis', 'queued', :provider, :provider_model,
+                CAST(:request_metadata AS jsonb), 3
             )
             RETURNING id, job_type, status, provider, provider_model, created_at
             """
         ),
         {
+            "provider": settings.llm_provider,
+            "provider_model": settings.llm_model or "mock-entity-analyzer-v2",
             "request_metadata": json.dumps(
                 {
                     "series_id": str(series_id),
@@ -253,7 +277,26 @@ def analyze_series_story(
     db.commit()
     result = dict(job)
     result["analysis_run_id"] = str(analysis_run["id"])
+    result["estimate"] = estimate
     return result
+
+
+@router.get("/series/{series_id}/analysis-estimate")
+def get_analysis_estimate(series_id: UUID, db: Session = Depends(get_db)):
+    source_id = db.execute(
+        text(
+            """SELECT ss.id FROM story_sources ss
+               JOIN series s ON s.id = ss.series_id
+               JOIN projects p ON p.id = s.project_id
+               JOIN users u ON u.id = p.owner_id
+               WHERE ss.series_id = :series_id AND u.email = :email
+               ORDER BY ss.created_at DESC LIMIT 1"""
+        ),
+        {"series_id": str(series_id), "email": DEV_USER_EMAIL},
+    ).scalar()
+    if source_id is None:
+        raise HTTPException(status_code=404, detail="No story source was found for this series")
+    return estimate_analysis(list_source_chunks(db, source_id))
 
 
 @router.post("/series/{series_id}/plan-seasons")

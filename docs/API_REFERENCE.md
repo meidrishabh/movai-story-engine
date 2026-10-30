@@ -42,18 +42,32 @@ Supported uploads: Markdown and text-layer PDF. OCR is rejected.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/series/{series_id}/pipeline` | Series story status |
-| POST | `/series/{series_id}/analyze` | Start series analysis |
+| GET | `/series/{series_id}/analysis-estimate` | Estimated LLM calls, tokens and minimum time for the latest source |
+| POST | `/series/{series_id}/analyze` | Queue series analysis (409 if one is already queued or running; 400 above the call limit). The response includes the estimate. |
 | POST | `/series/{series_id}/plan-seasons` | Plan seasons |
 | POST | `/seasons/{season_id}/analyze` | Start season analysis |
 | POST | `/seasons/{season_id}/plan-episodes` | Queue episode planning |
 | POST | `/internal/seasons/{season_id}/analysis-result` | Commit structured result |
+
+## Entities and review
+
+Characters, locations and objects found by analysis. `kind` is `character`, `location` or `object`.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/series/{series_id}/entities` | List entities with review status, aliases and quote counts |
+| PATCH | `/entities/{kind}/{entity_id}` | Edit name, label, description; approve or flag. Any edit locks the entry against re-analysis. |
+| POST | `/entities/{kind}/{entity_id}/merge` | Merge into another entry (`{"into_id": "..."}`); reversible |
+| POST | `/entities/{kind}/{entity_id}/unmerge` | Undo a merge |
+
+The same name may appear more than once in a series when entries carry different `disambiguation` labels.
 
 ## Jobs
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/jobs/{job_id}` | Get job status |
-| POST | `/jobs/{job_id}/run-mock` | Run development job |
+| POST | `/jobs/{job_id}/run-mock` | Run a mock-provider job inline (development only). Real jobs are run by the job runner. |
 | POST | `/jobs/{job_id}/cancel` | Cancel queued/running job |
 
 ## Response conventions

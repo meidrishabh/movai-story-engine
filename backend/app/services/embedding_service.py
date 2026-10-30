@@ -1,7 +1,5 @@
-import os
-
+from app.core.settings import settings
 from app.providers.embedding_base import EmbeddingProvider, EmbeddingResult
-from app.providers.embedding_mock import MockEmbeddingProvider
 from app.providers.embedding_mock import MockEmbeddingProvider
 
 
@@ -11,15 +9,10 @@ class EmbeddingService:
 
     @staticmethod
     def _configured_provider() -> EmbeddingProvider:
-        provider_name = os.getenv("EMBEDDING_PROVIDER", "mock").lower()
-        if provider_name == "local":
+        if settings.embedding_provider.lower() == "local":
             from app.providers.embedding_local import LocalSentenceTransformerProvider
 
-            model_name = os.getenv(
-                "EMBEDDING_MODEL",
-                "sentence-transformers/all-MiniLM-L6-v2",
-            )
-            return LocalSentenceTransformerProvider(model_name)
+            return LocalSentenceTransformerProvider(settings.embedding_model)
         return MockEmbeddingProvider()
 
     def embed(self, text: str) -> EmbeddingResult:
