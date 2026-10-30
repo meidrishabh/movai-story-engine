@@ -173,6 +173,17 @@ class FillerResult(_Loose):
     removals: list[FillerItem] = Field(default_factory=list)
 
 
+class RepairedEpisode(_Loose):
+    number: int
+    synopsis: str | None = None
+    opening_note: str | None = None
+    closing_note: str | None = None
+
+
+class EpisodeRepairResult(_Loose):
+    episodes: list[RepairedEpisode] = Field(default_factory=list)
+
+
 class JudgeVerdict(_Loose):
     id: str
     verdict: str  # "cut" or "keep"

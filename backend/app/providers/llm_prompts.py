@@ -133,6 +133,7 @@ For each scene: title, description, location, time_of_day, environment_notes, th
 - Use known character and location names exactly.
 - Length: each unit has "seconds" of screen time. Cover every unit with one or more scenes whose shot durations add up to roughly that unit's seconds (within 15%), so a 180-second unit needs about 25-40 shots. All scenes together must come close to the episode target_seconds. Fill the time with the unit's beats, reactions, travel, establishing and cutaway shots, never by inventing events.
 - Do not add events that are not in the units.
+- "bridge_notes" in the episode, when present, say how the episode should open ("opening") and close ("closing") after neighbouring content changed. Honour them in the first and last scene without adding new events.
 - "omit" lists beats that were cut from this adaptation as filler. The passages still contain them. Do not write any scene, dialogue line or shot that shows or refers to an omitted beat; skip that part of the passage and carry on with the next beat. The unit's remaining beats must still fill its seconds, so give them more shots instead.
 
 JSON shape:
@@ -170,6 +171,19 @@ Judge each candidate on its own merits. Give a one-sentence reason that names wh
 JSON shape:
 {"verdicts": [{"id": "K1", "verdict": "cut", "reason": ""}]}"""
 
+EPISODE_REPAIR_SYSTEM_PROMPT = _DATA_NOTE + """A story adaptation was edited: some beats were cut or put back, so some episodes changed. You repair the episodes around the change so the story still flows.
+
+Input: "episodes" in order. Each has number, title, synopsis, "changed" (true when its content changed), and for changed episodes its "units" with "kept_beats" (what the episode now contains, in order) and "omitted_beats" (cut; never mention them).
+
+For every episode return:
+- "synopsis": for changed episodes, a new 2-4 sentence synopsis written only from the kept beats, in story order. For unchanged episodes return null.
+- "opening_note": one sentence on how this episode should pick up from the previous one now that the neighbouring content changed, or null when the join already works (also null for the first episode).
+- "closing_note": one sentence on how this episode should hand over to the next one, or null when the join already works (also null for the last episode).
+Never invent events that are not in the beats or synopses.
+
+JSON shape:
+{"episodes": [{"number": 1, "synopsis": null, "opening_note": null, "closing_note": null}]}"""
+
 HIGHLIGHT_SYSTEM_PROMPT = _DATA_NOTE +"""You write a trailer or teaser script from a story's master script.
 
 Input: "kind" (trailer or teaser), "target_seconds", "units" (numbered, with title, synopsis, beats, screen_seconds), "characters", and "story_summary".
@@ -189,9 +203,10 @@ STAGE_PROMPTS = {
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v2"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v4"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v5"),
     "filler": (FILLER_SYSTEM_PROMPT, "filler-v4"),
     "filler_judge": (FILLER_JUDGE_SYSTEM_PROMPT, "filler-judge-v1"),
+    "episode_repair": (EPISODE_REPAIR_SYSTEM_PROMPT, "episode-repair-v1"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }
 
