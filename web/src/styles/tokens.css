@@ -1,0 +1,23 @@
+/* Design tokens: dark studio theme. Components use these only, so a theme change is one file. */
+:root {
+  --bg: #0e0f12;
+  --panel: #16181d;
+  --panel-raised: #1c1f26;
+  --line: #2a2e37;
+  --text: #e7e9ee;
+  --muted: #9aa0ac;
+
+  --accent: #f2a33a;
+  --accent-ink: #1a1205;
+  --ok: #3cc4a8;
+  --warn: #e8b64a;
+  --bad: #e5636b;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --gap: 16px;
+  --sidebar: 232px;
+}
