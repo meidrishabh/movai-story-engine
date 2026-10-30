@@ -133,7 +133,7 @@ For each scene: title, description, location, time_of_day, environment_notes, th
 - Use known character and location names exactly.
 - Length: each unit has "seconds" of screen time. Cover every unit with one or more scenes whose shot durations add up to roughly that unit's seconds (within 15%), so a 180-second unit needs about 25-40 shots. All scenes together must come close to the episode target_seconds. Fill the time with the unit's beats, reactions, travel, establishing and cutaway shots, never by inventing events.
 - Do not add events that are not in the units.
-- "omit" lists beats that were cut from this adaptation as filler: leave them out of the scenes.
+- "omit" lists beats that were cut from this adaptation as filler. The passages still contain them. Do not write any scene, dialogue line or shot that shows or refers to an omitted beat; skip that part of the passage and carry on with the next beat. The unit's remaining beats must still fill its seconds, so give them more shots instead.
 
 JSON shape:
 {"scenes": [{"title": "", "description": "", "location": "", "time_of_day": null, "environment_notes": null, "characters": [],
@@ -174,7 +174,7 @@ STAGE_PROMPTS = {
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v2"),
     "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v3"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v4"),
     "filler": (FILLER_SYSTEM_PROMPT, "filler-v2"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
 }
