@@ -36,6 +36,12 @@ def _owned_plan(db: Session, plan_id: UUID):
     return plan
 
 
+def _forget_breakdown(db: Session, episode_id) -> None:
+    """A queued breakdown asks the model again; a retry of the job then reuses the replies it already got."""
+    db.execute(text("DELETE FROM analysis_batches WHERE stage_name = 'scene_breakdown' AND batch_key LIKE :p"),
+               {"p": f"episode:{episode_id}:%"})
+
+
 @router.get("/series/{series_id}/timeline")
 def get_timeline(series_id: UUID, db: Session = Depends(get_db)):
     _series_owned(db, series_id)
@@ -100,7 +106,7 @@ def list_episode_plans(series_id: UUID, db: Session = Depends(get_db)):
         text("""SELECT p.id, p.season_id, s.season_number, s.title AS season_title, p.episode_number, p.title,
                        p.synopsis, p.target_duration_seconds, p.opening_hook, p.climax_notes, p.ending_notes,
                        p.status, p.review_note, cardinality(p.source_unit_ids) AS unit_count,
-                       (SELECT array_agg(name ORDER BY name) FROM characters WHERE id = ANY(p.character_ids)) AS characters,
+                       COALESCE((SELECT array_agg(name ORDER BY name) FROM characters WHERE id = ANY(p.character_ids)), '{}') AS characters,
                        (SELECT e.id FROM episodes e WHERE e.season_id = p.season_id AND e.episode_number = p.episode_number) AS episode_id
                 FROM episode_plans p JOIN seasons s ON s.id = p.season_id
                 WHERE s.series_id = :s ORDER BY p.episode_number"""),
@@ -184,6 +190,7 @@ def queue_scene_breakdown(episode_id: UUID, db: Session = Depends(get_db)):
                 AND request_metadata ->> 'episode_id' = :e"""), {"e": str(episode_id)}).scalar()
     if active:
         raise HTTPException(status_code=409, detail="A breakdown for this episode is already queued or running")
+    _forget_breakdown(db, episode_id)
     job = db.execute(
         text("""INSERT INTO generation_jobs (job_type, status, provider, request_metadata)
                 VALUES ('scene_breakdown', 'queued', 'llm', CAST(:meta AS jsonb))
@@ -245,6 +252,7 @@ def queue_series_breakdown(series_id: UUID, db: Session = Depends(get_db)):
                                 AND j.status IN ('queued', 'running') AND j.request_metadata ->> 'episode_id' = e.id::text)
                 ORDER BY e.episode_number"""), {"s": str(series_id)}).scalars().all()
     for episode_id in episodes:
+        _forget_breakdown(db, episode_id)
         db.execute(
             text("""INSERT INTO generation_jobs (job_type, status, provider, request_metadata)
                     VALUES ('scene_breakdown', 'queued', 'llm', CAST(:meta AS jsonb))"""),
