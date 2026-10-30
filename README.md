@@ -174,21 +174,16 @@ The application is available at:
 
 ## Applying migrations
 
-PostgreSQL 13 `psql.exe` is expected at the default Windows installation path. Apply migrations in numeric order:
+From `backend/`, the runner applies every file in `db/` that has not run yet and records it in `schema_migrations`:
 
 ```powershell
-$env:PGPASSWORD = "<password>"
-Get-ChildItem .\db -Filter "*.sql" | Sort-Object Name | ForEach-Object {
-    & "C:\Program Files\PostgreSQL\13\bin\psql.exe" `
-        -v ON_ERROR_STOP=1 `
-        -U postgres `
-        -d MovAI `
-        -h localhost `
-        -f $_.FullName
-}
+python -m app.migrate            # apply what is pending
+python -m app.migrate --status   # show applied and pending files
+python -m app.migrate --baseline # record all files as applied without running them,
+                                 # for a database that was migrated by hand before tracking existed
 ```
 
-Do not reapply migrations casually against a production database. Use migration tracking before production deployment.
+Files run in numeric order and each one should be safe to run once. Back up a production database first.
 
 ## Story upload endpoints
 
