@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import PermanentJobError
 from app.providers.llm_base import LLMAnalysisRequest
 from app.schemas.llm_stages import EpisodePlanResult
+from app.services.adaptation_service import effective_units
 from app.services.llm_stage import LLMStageClient
 
 STAGE = "episode_plan"
@@ -47,17 +48,14 @@ def repair_ranges(episodes: list[tuple[int, int]], first: int, last: int) -> lis
 
 
 def build_episode_plan(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID,
-                       master_script_id: UUID, profile: str, story_format: str) -> dict:
-    rows = db.execute(
-        text("""SELECT id, sequence_number, title, synopsis, character_names, estimated_seconds
-                FROM story_units WHERE master_script_id = :m ORDER BY sequence_number"""),
-        {"m": str(master_script_id)},
-    ).mappings().all()
+                       master_script_id: UUID, profile: str, story_format: str,
+                       adaptation_kind: str = "full") -> dict:
+    rows = effective_units(db, series_id, master_script_id, adaptation_kind)
     if not rows:
         raise PermanentJobError("The master script has no units to plan from")
-    units = [{"number": r["sequence_number"], "title": r["title"], "synopsis": (r["synopsis"] or "")[:200],
-              "characters": r["character_names"], "screen_seconds": r["estimated_seconds"] or 30} for r in rows]
-    unit_ids = {r["sequence_number"]: r["id"] for r in rows}
+    units = [{"number": r["number"], "title": r["title"], "synopsis": r["synopsis"][:200],
+              "characters": r["characters"], "screen_seconds": r["screen_seconds"]} for r in rows]
+    unit_ids = {r["number"]: r["id"] for r in rows}
     total = sum(u["screen_seconds"] for u in units)
     target = db.execute(text("SELECT target_episode_duration_seconds FROM series WHERE id = :s"),
                         {"s": str(series_id)}).scalar_one() or DEFAULT_EPISODE_SECONDS
@@ -67,7 +65,7 @@ def build_episode_plan(db: Session, client: LLMStageClient, run_id: UUID, series
         task_input={"units": units, "target_episode_seconds": target, "total_seconds": total,
                     "story_format": story_format},
     )
-    key = str(master_script_id)
+    key = f"{master_script_id}:{adaptation_kind}"
     result: EpisodePlanResult = client.run(db, run_id, STAGE, key, request, EpisodePlanResult)
 
     # Flatten the model's seasons and make sure the ranges cover every unit exactly once.
@@ -115,19 +113,21 @@ def build_episode_plan(db: Session, client: LLMStageClient, run_id: UUID, series
         names = list(dict.fromkeys(n for u in covered for n in u["characters"]))
         db.execute(
             text("""INSERT INTO episode_plans (season_id, master_script_id, episode_number, title, synopsis,
-                        source_unit_ids, target_duration_seconds, opening_hook, climax_notes, ending_notes, character_ids)
+                        source_unit_ids, target_duration_seconds, opening_hook, climax_notes, ending_notes, character_ids,
+                        adaptation_kind)
                     VALUES (:season, :m, :n, :title, :synopsis, CAST(:units AS uuid[]), :seconds, :hook, :climax, :ending,
                             COALESCE((SELECT array_agg(id) FROM characters WHERE series_id = :s AND name = ANY(:names)
-                                      AND merged_into_id IS NULL), '{}'))"""),
+                                      AND merged_into_id IS NULL), '{}'), :kind)"""),
             {"season": str(season_ids[season_index]), "m": str(master_script_id), "n": next_number + plans,
              "title": (episode.title if episode else None) or f"Episode {next_number + plans}",
              "synopsis": episode.synopsis if episode else None,
              "units": "{" + ",".join(str(unit_ids[u["number"]]) for u in covered) + "}",
              "seconds": max(1, sum(u["screen_seconds"] for u in covered)),
              "hook": episode.opening_hook if episode else None, "climax": episode.climax_notes if episode else None,
-             "ending": episode.ending_notes if episode else None, "s": str(series_id), "names": names},
+             "ending": episode.ending_notes if episode else None, "s": str(series_id), "names": names,
+             "kind": adaptation_kind},
         )
         plans += 1
     db.commit()
-    return {"plans": plans, "seasons": len(season_ids), "total_seconds": total, "target_episode_seconds": target,
+    return {"adaptation": adaptation_kind, "plans": plans, "seasons": len(season_ids), "total_seconds": total, "target_episode_seconds": target,
             "used_fallback": used_fallback}

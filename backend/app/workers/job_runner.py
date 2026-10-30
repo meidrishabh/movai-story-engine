@@ -13,7 +13,12 @@ from sqlalchemy import text
 from app.core.errors import PermanentJobError
 from app.db import SessionLocal
 from app.repositories.analysis_repository import mark_analysis_running
+from app.providers.llm_factory import get_llm_provider
+from app.services.adaptation_service import build_highlight, detect_filler, latest_master_script
+from app.services.adaptation_service import run_context as adaptation_context
 from app.services.analysis_pipeline import run_structure_stages
+from app.services.episode_plan_service import build_episode_plan
+from app.services.llm_stage import LLMStageClient
 from app.services.scene_breakdown_service import build_scene_breakdown
 from app.workers.embedding_job import process_embedding_job
 from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
@@ -38,7 +43,11 @@ WHERE id = (
            OR (job_type = 'story_analysis'
                AND request_metadata ->> 'analysis_run_id' IS NOT NULL)
            OR (job_type = 'scene_breakdown'
-               AND request_metadata ->> 'episode_id' IS NOT NULL))
+               AND request_metadata ->> 'episode_id' IS NOT NULL)
+           OR (job_type = 'adaptation_generation'
+               AND request_metadata ->> 'series_id' IS NOT NULL)
+           OR (job_type = 'episode_segmentation'
+               AND request_metadata ->> 'plan_series_id' IS NOT NULL))
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
@@ -105,6 +114,48 @@ def run_story_analysis(db, job):
     complete_story_analysis(db, job["id"], metadata)
 
 
+def _succeed(db, job, result: dict):
+    db.execute(
+        text("""UPDATE generation_jobs SET status = 'succeeded', progress = 100, completed_at = now(),
+                  usage_metadata = CAST(:result AS jsonb) WHERE id = :job_id"""),
+        {"job_id": str(job["id"]), "result": json.dumps(result)},
+    )
+    db.commit()
+
+
+def run_adaptation(db, job):
+    meta = job["request_metadata"]
+    series_id, kind = UUID(meta["series_id"]), meta["kind"]
+    run_id, profile, story_format = adaptation_context(db, series_id)
+    client = LLMStageClient(get_llm_provider())
+    try:
+        if kind == "concentrated":
+            script = latest_master_script(db, series_id)
+            client.forget(db, run_id, "filler", f"{script['id']}:")
+            result = detect_filler(db, client, run_id, series_id, script["id"], profile, story_format)
+        else:
+            client.forget(db, run_id, "highlight", f"{kind}:")
+            result = build_highlight(db, client, run_id, series_id, kind, int(meta["target_seconds"]), profile, story_format)
+    except Exception as error:
+        db.rollback()
+        db.execute(text("UPDATE adaptations SET status = 'failed', error_summary = :e, updated_at = now() "
+                        "WHERE series_id = :s AND kind = :k"), {"e": str(error)[:500], "s": str(series_id), "k": kind})
+        db.commit()
+        raise
+    _succeed(db, job, {**result, **client.state.usage})
+
+
+def run_episode_planning(db, job):
+    meta = job["request_metadata"]
+    series_id = UUID(meta["plan_series_id"])
+    run_id, profile, story_format = adaptation_context(db, series_id)
+    script = latest_master_script(db, series_id)
+    client = LLMStageClient(get_llm_provider())
+    result = build_episode_plan(db, client, run_id, series_id, script["id"], profile, story_format,
+                                meta.get("adaptation_kind") or "full")
+    _succeed(db, job, result)
+
+
 def run_scene_breakdown(db, job):
     result = build_scene_breakdown(db, UUID(job["request_metadata"]["episode_id"]))
     db.execute(
@@ -116,6 +167,8 @@ def run_scene_breakdown(db, job):
 
 
 HANDLERS = {
+    "adaptation_generation": run_adaptation,
+    "episode_segmentation": run_episode_planning,
     "scene_breakdown": run_scene_breakdown,
     "embedding_generation": run_embedding,
     "story_analysis": run_story_analysis,

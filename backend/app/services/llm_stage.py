@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.errors import PermanentJobError
@@ -49,6 +50,14 @@ class LLMStageClient:
         if cache_key not in self._stored:
             self._stored[cache_key] = load_batches(db, run_id, stage)
         return self._stored[cache_key]
+
+    def forget(self, db: Session, run_id, stage: str, key_prefix: str) -> None:
+        """Drop stored replies so an explicit regenerate calls the model again."""
+        db.execute(
+            text("DELETE FROM analysis_batches WHERE analysis_run_id = :r AND stage_name = :s AND batch_key LIKE :p"),
+            {"r": str(run_id), "s": stage, "p": key_prefix + "%"})
+        db.commit()
+        self._stored.pop((str(run_id), stage), None)
 
     def run(self, db: Session, run_id, stage: str, key: str, request: LLMAnalysisRequest,
             model_cls: type[BaseModel], chunk_ids: list[str] | None = None) -> BaseModel:

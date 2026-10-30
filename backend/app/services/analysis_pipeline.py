@@ -7,8 +7,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.errors import PermanentJobError
+from app.providers.llm_base import LLMProviderError
 from app.providers.llm_factory import get_llm_provider
 from app.repositories.analysis_repository import list_source_chunks, update_analysis_progress
+from app.services.adaptation_service import build_full, detect_filler
 from app.services.continuity_service import build_continuity
 from app.services.episode_plan_service import build_episode_plan
 from app.services.llm_stage import LLMStageClient
@@ -19,7 +21,7 @@ from app.services.timeline_service import build_timeline
 log = logging.getLogger("analysis_pipeline")
 
 # (stage name, progress when finished); extraction already brought the run to 85.
-PROGRESS = {"timeline": 88, "continuity": 92, "master_script": 96, "episode_plan": 99}
+PROGRESS = {"timeline": 88, "continuity": 92, "master_script": 95, "adaptations": 97, "episode_plan": 99}
 
 
 def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], None] | None = None) -> dict:
@@ -50,8 +52,16 @@ def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], No
     done("continuity", summary["continuity"])
     summary["master_script"] = build_master_script(db, client, run_id, series_id, source_id, snapshot, profile, story_format)
     done("master_script", summary["master_script"])
-    summary["episode_plan"] = build_episode_plan(
-        db, client, run_id, series_id, UUID(summary["master_script"]["master_script_id"]), profile, story_format)
+    script_id = UUID(summary["master_script"]["master_script_id"])
+    summary["adaptations"] = {"full": build_full(db, series_id, script_id)}
+    try:
+        summary["adaptations"]["concentrated"] = detect_filler(db, client, run_id, series_id, script_id, profile, story_format)
+    except (LLMProviderError, PermanentJobError) as error:  # the concentrated option is optional; the rest still works
+        db.rollback()
+        summary["adaptations"]["concentrated"] = {"skipped": str(error)[:200]}
+        log.warning("Filler detection skipped: %s", error)
+    done("adaptations", summary["adaptations"])
+    summary["episode_plan"] = build_episode_plan(db, client, run_id, series_id, script_id, profile, story_format)
     done("episode_plan", summary["episode_plan"])
     summary["llm_usage"] = client.state.usage
     return summary
