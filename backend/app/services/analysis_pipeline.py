@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import PermanentJobError
 from app.providers.llm_base import LLMProviderError
-from app.providers.llm_factory import get_llm_provider
+from app.providers.llm_factory import get_judge_provider, get_llm_provider
 from app.repositories.analysis_repository import list_source_chunks, update_analysis_progress
 from app.services.adaptation_service import build_full, detect_filler
 from app.services.continuity_service import build_continuity
@@ -37,7 +37,7 @@ def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], No
         raise PermanentJobError("Entity extraction output is missing; run extraction first")
     snapshot, series_id, source_id, profile = row["payload"], run["series_id"], run["source_id"], str(run["profile"])
     story_format = detect_story_format(list_source_chunks(db, source_id))
-    client = LLMStageClient(get_llm_provider())
+    client = LLMStageClient(get_llm_provider(), get_judge_provider())
 
     def done(stage: str, result: dict) -> None:
         update_analysis_progress(db, run_id, stage, PROGRESS[stage])

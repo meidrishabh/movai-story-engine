@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import PermanentJobError
 from app.providers.llm_base import LLMAnalysisRequest
 from app.schemas.llm_stages import FillerResult, HighlightResult, JudgeResult
-from app.services.llm_stage import LLMStageClient
+from app.services.llm_stage import LLMStageClient, provider_model
 from app.services.metrics import log_decision, record_metric
 from app.services.story_profiles import resolve_profile
 
@@ -209,7 +209,8 @@ def detect_filler(db: Session, client: LLMStageClient, run_id: UUID, series_id: 
         log_decision(db, series_id, run_id, "filler", {"unit": item["unit"], "beat": item["beat"]}, decision, "pipeline",
                      {"pass1_reason": item["reason"], "judge_verdict": verdict.verdict if verdict else None,
                       "judge_reason": item["judge_reason"], "reused_later": item["reused_later"],
-                      "story_profile": profile_key})
+                      "story_profile": profile_key, "proposal_model": provider_model(client.provider),
+                      "judge_model": provider_model(client.judge_provider or client.provider)})
 
     # A unit can lose at most its whole length, however many beats were flagged.
     saved: dict[int, int] = {}
