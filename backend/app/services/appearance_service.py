@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.errors import PermanentJobError
 from app.providers.llm_base import LLMAnalysisRequest
 from app.repositories.analysis_repository import list_source_chunks
-from app.schemas.llm_stages import AppearanceResult
+from app.repositories.entity_repository import TABLES
+from app.schemas.llm_stages import AppearanceResult, LookResult
 from app.services.llm_stage import LLMStageClient
 
 STAGE = "appearance"
@@ -59,19 +60,19 @@ def build_appearance(db: Session, client: LLMStageClient, run_id: UUID, series_i
     return counts
 
 
-def _names_and_chunks(db: Session, character_id, name: str) -> tuple[list[str], set[str]]:
-    """The character's names (own, aliases, merged duplicates) and every chunk that mentions any of them."""
+def _names_and_chunks(db: Session, character_id, name: str, kind: str = "character") -> tuple[list[str], set[str]]:
+    """The entity's names (own, aliases, merged duplicates) and every chunk that mentions any of them."""
     ids = [str(character_id)] + [str(r[0]) for r in db.execute(
-        text("SELECT id FROM characters WHERE merged_into_id = :c"), {"c": str(character_id)})]
+        text(f"SELECT id FROM {TABLES[kind]} WHERE merged_into_id = :c"), {"c": str(character_id)})]
     names = [name]
-    for alias, in db.execute(text("SELECT alias FROM entity_aliases WHERE entity_type = 'character' AND entity_id = ANY(CAST(:ids AS uuid[]))"),
-                             {"ids": "{" + ",".join(ids) + "}"}):
+    for alias, in db.execute(text("SELECT alias FROM entity_aliases WHERE entity_type = :k AND entity_id = ANY(CAST(:ids AS uuid[]))"),
+                             {"k": kind, "ids": "{" + ",".join(ids) + "}"}):
         names.append(alias)
-    for merged, in db.execute(text("SELECT name FROM characters WHERE merged_into_id = :c"), {"c": str(character_id)}):
+    for merged, in db.execute(text(f"SELECT name FROM {TABLES[kind]} WHERE merged_into_id = :c"), {"c": str(character_id)}):
         names.append(merged)
     chunk_ids = {str(r[0]) for r in db.execute(
-        text("SELECT chunk_id FROM entity_mentions WHERE entity_type = 'character' AND entity_id = ANY(CAST(:ids AS uuid[]))"),
-        {"ids": "{" + ",".join(ids) + "}"})}
+        text("SELECT chunk_id FROM entity_mentions WHERE entity_type = :k AND entity_id = ANY(CAST(:ids AS uuid[]))"),
+        {"k": kind, "ids": "{" + ",".join(ids) + "}"})}
     return list(dict.fromkeys(n for n in names if n and n.strip())), chunk_ids
 
 
@@ -135,10 +136,92 @@ def _store(db: Session, character, result: AppearanceResult) -> bool:
     return True
 
 
+LOOK_STAGES = {"location": "place_look", "object": "object_look"}
+LOOK_KEYS = {"location": "place", "object": "object"}
+MAX_LOOKS = 15  # most-mentioned places, and separately objects
+
+
+def build_entity_looks(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID, profile: str,
+                       story_format: str, kind: str) -> dict:
+    """Reference sheets for the most-mentioned places or objects, in `entity_looks`."""
+    run = db.execute(text("SELECT source_id FROM analysis_runs WHERE id = :r"), {"r": str(run_id)}).mappings().one()
+    chunks = list_source_chunks(db, run["source_id"])
+    order = {c["chunk_id"]: c["narrative_position"] for c in chunks}
+    chunk_text = {c["chunk_id"]: c["text"] for c in chunks}
+    entities = db.execute(
+        text(f"""SELECT id, name, description FROM {TABLES[kind]}
+                 WHERE series_id = :s AND merged_into_id IS NULL AND review_status <> 'stale'"""),
+        {"s": str(series_id)}).mappings().all()
+    candidates = []
+    for entity in entities:
+        names, chunk_ids = _names_and_chunks(db, entity["id"], entity["name"], kind)
+        if chunk_ids:
+            candidates.append((len(chunk_ids), entity, names, chunk_ids))
+    candidates.sort(key=lambda c: -c[0])
+    counts = {"entities": 0, "written": 0, "no_details": 0, "kept_hand_edited": 0}
+    for _, entity, names, chunk_ids in candidates[:MAX_LOOKS]:
+        approved = db.execute(text("SELECT 1 FROM entity_looks WHERE entity_type = :k AND entity_id = :e AND status = 'approved' LIMIT 1"),
+                              {"k": kind, "e": str(entity["id"])}).scalar()
+        if approved:
+            counts["kept_hand_edited"] += 1
+            continue
+        passages = _passages(sorted(chunk_ids, key=lambda c: order.get(c, 0)), chunk_text, names)
+        if not passages:
+            continue
+        request = LLMAnalysisRequest(
+            task=LOOK_STAGES[kind], profile=profile, context_chunks=[], known_entities={}, story_format=story_format,
+            task_input={LOOK_KEYS[kind]: {"name": entity["name"], "aliases": names[1:], "description": (entity["description"] or "")[:200]},
+                        "passages": passages})
+        result: LookResult = client.run(db, run_id, LOOK_STAGES[kind], str(entity["id"]), request, LookResult)
+        counts["entities"] += 1
+        counts["written" if _store_look(db, series_id, kind, entity["id"], result) else "no_details"] += 1
+    db.commit()
+    return counts
+
+
+def _store_look(db: Session, series_id: UUID, kind: str, entity_id, result: LookResult) -> bool:
+    db.execute(text("DELETE FROM entity_looks WHERE entity_type = :k AND entity_id = :e AND status = 'draft'"),
+               {"k": kind, "e": str(entity_id)})
+    details = {f: getattr(result, f) for f in ("form", "atmosphere", "distinctive_features") if getattr(result, f)}
+    if not details and not result.description:
+        return False
+    version = db.execute(text("SELECT COALESCE(MAX(version_number), 0) + 1 FROM entity_looks WHERE entity_type = :k AND entity_id = :e"),
+                         {"k": kind, "e": str(entity_id)}).scalar_one()
+    notes = "Extracted from the story text."
+    if result.evidence:
+        notes += " Evidence: " + " | ".join(result.evidence)
+    missing = [f.replace("_", " ") for f in ("form", "atmosphere", "distinctive_features") if f not in details]
+    if missing:
+        notes += " Not described: " + ", ".join(missing) + "."
+    db.execute(
+        text("""INSERT INTO entity_looks (series_id, entity_type, entity_id, version_number, description, form, atmosphere,
+                    distinctive_features, color_palette, status, change_notes)
+                VALUES (:s, :k, :e, :v, :d, :form, :atmo, :dist, CAST(:palette AS jsonb), 'draft', :notes)"""),
+        {"s": str(series_id), "k": kind, "e": str(entity_id), "v": version,
+         "d": result.description or "; ".join(f"{k}: {v}" for k, v in details.items()), "form": result.form,
+         "atmo": result.atmosphere, "dist": result.distinctive_features, "palette": json.dumps(result.color_palette), "notes": notes})
+    return True
+
+
+def build_all_looks(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID, profile: str, story_format: str) -> dict:
+    """Characters, places and objects. One failing kind does not stop the others."""
+    from app.providers.llm_base import LLMProviderError
+    summary: dict = {}
+    for name, build in (("characters", lambda: build_appearance(db, client, run_id, series_id, profile, story_format)),
+                        ("places", lambda: build_entity_looks(db, client, run_id, series_id, profile, story_format, "location")),
+                        ("objects", lambda: build_entity_looks(db, client, run_id, series_id, profile, story_format, "object"))):
+        try:
+            summary[name] = build()
+        except LLMProviderError as error:
+            db.rollback()
+            summary[name] = {"skipped": str(error)[:200]}
+    return summary
+
+
 def generate_for_series(db: Session, client: LLMStageClient, run_id: UUID, series_id: UUID, profile: str,
                         story_format: str) -> dict:
     """Run the stage for a finished analysis. Stored replies are cleared when the job is queued, not here,
     so a retried job continues where it stopped."""
     if run_id is None:
         raise PermanentJobError("The series has no finished analysis run")
-    return build_appearance(db, client, run_id, series_id, profile, story_format)
+    return build_all_looks(db, client, run_id, series_id, profile, story_format)

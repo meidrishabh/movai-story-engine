@@ -1,5 +1,6 @@
 """Character reference sheets: how each character looks, taken from the story and editable by the user."""
 import json
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.api.v1.adaptations import _active, _queue
 from app.api.v1.entities import _series_owned
+from app.repositories.entity_repository import TABLES
 
 router = APIRouter(prefix="/api/v1", tags=["appearance"])
 
@@ -21,6 +23,14 @@ class AppearanceUpdate(BaseModel):
     distinctive_features: str | None = None
     color_palette: list[str] = Field(default_factory=list)
     voice: str | None = None
+
+
+class LookUpdate(BaseModel):
+    description: str = Field(min_length=1)
+    form: str | None = None
+    atmosphere: str | None = None
+    distinctive_features: str | None = None
+    color_palette: list[str] = Field(default_factory=list)
 
 
 def _series_of_character(db: Session, character_id: UUID) -> UUID:
@@ -83,8 +93,43 @@ def generate_appearance(series_id: UUID, db: Session = Depends(get_db)):
     if _active(db, "adaptation_generation", "series_id", str(series_id)):
         raise HTTPException(status_code=409, detail="A generation job is already queued or running for this series")
     db.execute(  # drop stored replies so the model is asked again; a retry of the job then reuses what it already did
-        text("""DELETE FROM analysis_batches WHERE stage_name = 'appearance'
+        text("""DELETE FROM analysis_batches WHERE stage_name IN ('appearance', 'place_look', 'object_look')
                 AND analysis_run_id IN (SELECT id FROM analysis_runs WHERE series_id = :s)"""), {"s": str(series_id)})
     job = _queue(db, "adaptation_generation", {"series_id": str(series_id), "kind": "appearance"})
     db.commit()
     return job
+
+
+@router.get("/series/{series_id}/looks")
+def list_looks(series_id: UUID, db: Session = Depends(get_db)):
+    """The newest usable look for every place and object that has one (the user's own version first)."""
+    _series_owned(db, series_id)
+    rows = db.execute(
+        text("""SELECT DISTINCT ON (entity_type, entity_id) entity_type, entity_id, version_number, description, form,
+                       atmosphere, distinctive_features, color_palette, status, change_notes
+                FROM entity_looks WHERE series_id = :s AND status IN ('draft', 'approved')
+                ORDER BY entity_type, entity_id, (status = 'approved') DESC, version_number DESC"""),
+        {"s": str(series_id)}).mappings().all()
+    return {"items": [dict(r) for r in rows]}
+
+
+@router.put("/entities/{kind}/{entity_id}/look")
+def save_look(kind: Literal["location", "object"], entity_id: UUID, payload: LookUpdate, db: Session = Depends(get_db)):
+    """Save the user's look for a place or object as the approved version."""
+    table = TABLES[kind]
+    series_id = db.execute(text(f"SELECT series_id FROM {table} WHERE id = :e"), {"e": str(entity_id)}).scalar()
+    if series_id is None:
+        raise HTTPException(status_code=404, detail=f"{kind.capitalize()} was not found")
+    _series_owned(db, series_id)
+    version = db.execute(text("SELECT COALESCE(MAX(version_number), 0) + 1 FROM entity_looks WHERE entity_type = :k AND entity_id = :e"),
+                         {"k": kind, "e": str(entity_id)}).scalar_one()
+    db.execute(text("UPDATE entity_looks SET status = 'superseded' WHERE entity_type = :k AND entity_id = :e AND status IN ('draft', 'approved')"),
+               {"k": kind, "e": str(entity_id)})
+    db.execute(
+        text("""INSERT INTO entity_looks (series_id, entity_type, entity_id, version_number, description, form, atmosphere,
+                    distinctive_features, color_palette, status, change_notes)
+                VALUES (:s, :k, :e, :v, :d, :form, :atmo, :dist, CAST(:palette AS jsonb), 'approved', 'Edited by the user.')"""),
+        {"s": str(series_id), "k": kind, "e": str(entity_id), "v": version, "d": payload.description, "form": payload.form,
+         "atmo": payload.atmosphere, "dist": payload.distinctive_features, "palette": json.dumps(payload.color_palette)})
+    db.commit()
+    return {"entity_id": str(entity_id), "version_number": version, "status": "approved"}

@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Badge, Button, Card, Empty, ErrorNote, Loading, Notice, PageHeader } from '../../shared/ui'
 import { plural } from '../../shared/lib/format'
 import { useSeriesId } from '../series/api'
 import { useEntities, useMergeEntity, useUpdateEntity } from './api'
-import { useAppearance, useGenerateAppearance, useSaveAppearance, type AppearanceInput, type AppearanceSheet as Sheet } from './appearance'
+import { useAppearance, useGenerateAppearance, useLooks, useSaveAppearance, useSaveLook } from './appearance'
 import { AppearanceSheet } from './AppearanceSheet'
+import { ThingLook } from './ThingLook'
 import type { Entity, EntityKind, ReviewStatus } from './types'
 
 const TABS: { kind: EntityKind; label: string; key: 'characters' | 'locations' | 'objects' }[] = [
@@ -24,7 +25,9 @@ export default function CharactersPage() {
   const merge = useMergeEntity(seriesId)
   const [waiting, setWaiting] = useState(false)
   const appearance = useAppearance(seriesId, waiting)
+  const looks = useLooks(seriesId, waiting)
   const saveLook = useSaveAppearance(seriesId)
+  const saveThing = useSaveLook(seriesId)
   const readLooks = useGenerateAppearance(seriesId)
 
   if (entities.isPending) return <Loading />
@@ -42,14 +45,14 @@ export default function CharactersPage() {
         subtitle="Check what the analysis found. Edits you make are kept when the story is analysed again."
         actions={
           <Button busy={readLooks.isPending} disabled={total === 0} onClick={() => readLooks.mutate(undefined, { onSuccess: () => setWaiting(true) })}>
-            Read how characters look
+            Read how things look
           </Button>
         }
       />
       {readLooks.isError && <ErrorNote error={readLooks.error} />}
       {waiting && (
         <Notice tone="warn">
-          <span>Reading the story for how characters look. This takes a few minutes; looks appear as they finish. Your own edits are kept.</span>
+          <span>Reading the story for how characters, places and objects look. This takes a few minutes; looks appear as they finish. Your own edits are kept.</span>
           <Button variant="ghost" onClick={() => setWaiting(false)}>Hide</Button>
         </Notice>
       )}
@@ -75,7 +78,13 @@ export default function CharactersPage() {
                 entity={entity}
                 others={live.filter((o) => o.id !== entity.id)}
                 busy={update.isPending || merge.isPending}
-                look={kind === 'character' ? { sheet: appearance.data?.get(entity.id), busy: saveLook.isPending, onSave: (sheet) => saveLook.mutate({ characterId: entity.id, sheet }) } : undefined}
+                look={
+                  kind === 'character' ? (
+                    <AppearanceSheet sheet={appearance.data?.get(entity.id)} busy={saveLook.isPending} onSave={(sheet) => saveLook.mutate({ characterId: entity.id, sheet })} />
+                  ) : (
+                    <ThingLook kind={kind} sheet={looks.data?.get(entity.id)} busy={saveThing.isPending} onSave={(sheet) => saveThing.mutate({ kind, id: entity.id, sheet })} />
+                  )
+                }
                 onSave={(changes) => update.mutate({ kind, id: entity.id, changes })}
                 onMerge={(intoId) => merge.mutate({ kind, id: entity.id, intoId })}
               />
@@ -93,7 +102,7 @@ interface CardProps {
   busy: boolean
   onSave: (changes: { name?: string; description?: string; review_status?: ReviewStatus }) => void
   onMerge: (intoId: string) => void
-  look?: { sheet: Sheet | undefined; busy: boolean; onSave: (sheet: AppearanceInput) => void }
+  look?: ReactNode
 }
 
 function EntityCard({ entity, others, busy, onSave, onMerge, look }: CardProps) {
@@ -141,7 +150,7 @@ function EntityCard({ entity, others, busy, onSave, onMerge, look }: CardProps) 
             </div>
           )}
           <span className="muted">{plural(entity.mention_count, 'mention')}</span>
-          {look && <AppearanceSheet sheet={look.sheet} busy={look.busy} onSave={look.onSave} />}
+          {look}
           <div className="row">
             <Button busy={busy} onClick={() => onSave({ review_status: approved ? 'needs_review' : 'approved' })}>
               {approved ? 'Mark for review' : 'Approve'}

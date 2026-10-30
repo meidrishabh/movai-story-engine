@@ -11,7 +11,7 @@ from app.providers.llm_base import LLMProviderError
 from app.providers.llm_factory import get_judge_provider, get_llm_provider
 from app.repositories.analysis_repository import list_source_chunks, update_analysis_progress
 from app.services.adaptation_service import build_full, detect_filler
-from app.services.appearance_service import build_appearance
+from app.services.appearance_service import build_all_looks
 from app.services.continuity_service import build_continuity
 from app.services.episode_plan_service import build_episode_plan
 from app.services.llm_stage import LLMStageClient
@@ -53,7 +53,7 @@ def run_structure_stages(db: Session, run_id: UUID, on_progress: Callable[[], No
     summary["continuity"] = build_continuity(db, client, run_id, series_id, snapshot, profile, story_format)
     done("continuity", summary["continuity"])
     try:  # reference sheets are needed for visuals later, but the story pipeline works without them
-        summary["appearance"] = build_appearance(db, client, run_id, series_id, profile, story_format)
+        summary["appearance"] = build_all_looks(db, client, run_id, series_id, profile, story_format)
     except (LLMProviderError, PermanentJobError) as error:
         db.rollback()
         summary["appearance"] = {"skipped": str(error)[:200]}

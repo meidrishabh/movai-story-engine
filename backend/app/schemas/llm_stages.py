@@ -234,3 +234,18 @@ class AppearanceResult(_Loose):
     costumes: list[CostumeOut] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+
+
+class LookResult(_Loose):
+    """How a place or an object looks. Used for both; `form` is layout and architecture for a place, shape and material for an object."""
+    @field_validator("description", "form", "atmosphere", "distinctive_features", mode="before")
+    @classmethod
+    def _join_lists(cls, value):
+        return ", ".join(str(v) for v in value if v) or None if isinstance(value, list) else value
+
+    description: str | None = None
+    form: str | None = None
+    atmosphere: str | None = None
+    distinctive_features: str | None = None
+    color_palette: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)

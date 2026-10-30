@@ -89,7 +89,12 @@ def _mock_appearance(request: LLMAnalysisRequest) -> dict:
     return {"missing": ["age", "face_and_body", "clothing", "distinctive_features", "voice"]}
 
 
+def _mock_look(request: LLMAnalysisRequest) -> dict:
+    return {}
+
+
 _STAGE_MOCKS = {
+    "place_look": _mock_look, "object_look": _mock_look,
     "appearance": _mock_appearance,
     "filler": _mock_filler, "filler_judge": _mock_filler_judge, "episode_repair": _mock_episode_repair,
     "highlight": _mock_highlight,

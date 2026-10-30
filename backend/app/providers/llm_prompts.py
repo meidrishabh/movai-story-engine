@@ -232,6 +232,38 @@ JSON shape:
  "voice": null, "costumes": [{"name": "", "description": "", "colors": [], "accessories": [], "when": null}],
  "evidence": [], "missing": []}"""
 
+PLACE_LOOK_SYSTEM_PROMPT = _DATA_NOTE + """You write a visual reference for a place in a story, from what the story text says, so artists and image models can draw the same place every time.
+
+Input: "place" (name, aliases, short description) and "passages" (sentences from the story that mention it, in story order).
+
+Rules:
+- Use ONLY what the passages state or directly imply. Never invent looks. A field the text does not support is null (or an empty list). Leaving a field empty is far better than guessing.
+- "form": layout, size, architecture, materials, landscape as described, else null.
+- "atmosphere": mood, light, weather, era or time of day the text gives, else null.
+- "distinctive_features": landmarks, signature objects or features that make it recognisable.
+- "color_palette": colours the text ties to it, as plain words.
+- "description": one or two sentences summarising how it looks, using only the above.
+- "evidence": up to 4 short quotes from the passages (under 20 words each) that back the details you gave.
+
+JSON shape:
+{"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
+
+OBJECT_LOOK_SYSTEM_PROMPT = _DATA_NOTE + """You write a visual reference for an object in a story, from what the story text says, so artists and image models can draw the same object every time.
+
+Input: "object" (name, aliases, short description) and "passages" (sentences from the story that mention it, in story order).
+
+Rules:
+- Use ONLY what the passages state or directly imply. Never invent looks. A field the text does not support is null (or an empty list). Leaving a field empty is far better than guessing.
+- "form": shape, size, material as described, else null.
+- "atmosphere": its condition, age or wear as described, else null.
+- "distinctive_features": marks, inscriptions, parts or details that make it recognisable.
+- "color_palette": colours the text ties to it, as plain words.
+- "description": one or two sentences summarising how it looks, using only the above.
+- "evidence": up to 4 short quotes from the passages (under 20 words each) that back the details you gave.
+
+JSON shape:
+{"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
+
 STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
@@ -244,6 +276,8 @@ STAGE_PROMPTS = {
     "episode_repair": (EPISODE_REPAIR_SYSTEM_PROMPT, "episode-repair-v1"),
     "highlight": (HIGHLIGHT_SYSTEM_PROMPT, "highlight-v1"),
     "appearance": (APPEARANCE_SYSTEM_PROMPT, "appearance-v1"),
+    "place_look": (PLACE_LOOK_SYSTEM_PROMPT, "place-look-v1"),
+    "object_look": (OBJECT_LOOK_SYSTEM_PROMPT, "object-look-v1"),
 }
 
 
