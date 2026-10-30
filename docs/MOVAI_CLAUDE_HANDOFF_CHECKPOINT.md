@@ -64,7 +64,7 @@ Current target structure:
 
 ```text
 backend/app/
-├── main.py                         # FastAPI bootstrap plus legacy inactive bodies
+├── main.py                         # Minimal FastAPI bootstrap and UI mounting
 ├── db.py                            # SQLAlchemy engine/session dependency
 ├── core/
 │   └── config.py                    # Shared configuration and paths
@@ -203,10 +203,10 @@ Current development behavior:
 - Creates one document page for text input.
 - Creates paragraph-level `document_elements`.
 - Splits text into overlapping story chunks.
-- Creates `story_embeddings` rows.
-- Uses deterministic placeholder embeddings named `mock-embedding`.
-- Embedding dimension is currently 1536.
-- The placeholder embedding must later be replaced by the selected embedding provider.
+- Creates or queues `story_embeddings` rows through the embedding job flow.
+- Uses the configured embedding provider; local Sentence Transformers is the current default.
+- Active local embedding dimension is 384.
+- Mock vectors may still exist as obsolete historical rows and must not be mixed with active vectors.
 
 The application does not send embeddings directly to an LLM. Embeddings are used for retrieval/context selection; the retrieved text and structured data are sent to the LLM.
 
@@ -294,7 +294,7 @@ Similarity retrieval            complete and verified
 Complexity analysis             complete for deterministic first pass
 Structured LLM interface        complete
 Real LLM provider               not connected
-Real entity extraction          not complete
+Real entity extraction          mock contract only
 Timeline/continuity extraction  not complete
 Master-script generation        not complete
 Season/episode AI splitting     not complete
@@ -362,44 +362,27 @@ The demo overview has also been moved to `backend/app/api/v1/system.py`.
 
 The final cleanup is now complete: `backend/app/main.py` is a minimal bootstrap containing only FastAPI creation, versioned router registration, and UI static-file mounting. The inactive legacy handlers and duplicated schemas were removed from the application entrypoint.
 
+## Current repository and delivery status
+
+- Repository: `https://github.com/meidrishabh/movai-story-engine`
+- SSH authentication is configured for Git operations.
+- `master` is protected by pull requests, deletion protection, and force-push protection.
+- `SECURITY.md`, `CONTRIBUTING.md`, and `.github/dependabot.yml` are present.
+- Dependabot normal update pull requests are paused until CI is available.
+- Technical documents are organized under `docs/`; `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, and `pitch.md` remain at the root.
+- The investor-facing future-state pitch is in `pitch.md`.
+
+Recent branches and pull requests:
+
+- PR #1: repository security and contribution policies — merged.
+- PR #2: documentation organization — created for the docs reorganization.
+- PR #3: future-state investor pitch — created and updated with the complete product scope.
+
 ## Recommended next steps
 
-### 1. Extract season-level story routes
+### 1. Add CI before dependency automation
 
-Create a module such as:
-
-```text
-backend/app/api/v1/season_story.py
-```
-
-Move these routes from `main.py`:
-
-- `POST /api/v1/seasons/{season_id}/sources`
-- `GET /api/v1/seasons/{season_id}/sources`
-- `POST /api/v1/seasons/{season_id}/master-script`
-- `GET /api/v1/seasons/{season_id}/master-script`
-- `POST /api/v1/seasons/{season_id}/analyze`
-- `POST /api/v1/seasons/{season_id}/plan-episodes`
-
-### 2. Extract system/demo routes
-
-Create a small system router for:
-
-- `GET /health`
-- `GET /health/db`
-- `GET /api/v1/demo/overview`
-
-### 3. Delete inactive legacy bodies from `main.py`
-
-After the route moves are validated, reduce `main.py` to:
-
-- imports
-- FastAPI app creation
-- router registration
-- static UI mounting
-- system router registration
-
-### 4. Add tests
+Create a GitHub Actions workflow covering:
 
 Recommended first tests:
 
@@ -412,13 +395,37 @@ Recommended first tests:
 - Manual character/episode creation rejection
 - Storyboard job creation
 
-### 5. Add a real job worker
+Keep Dependabot update pull requests paused until these checks pass reliably.
+
+### 2. Connect the real LLM provider
+
+Implement a production provider behind the existing interface for:
+
+- Character, location, object, event, and relationship extraction
+- Timeline and causal-graph analysis
+- Master-script generation
+- Duration estimation
+- Season and episode planning
+
+### 3. Persist and review derived story entities
+
+Complete entity resolution, aliases, timeline anchors, continuity assignments, conflicts, and approval flows. Preserve source references for every generated result.
+
+### 4. Add a real job worker
 
 The current `run-mock` endpoint is synchronous and development-only. Replace it with a worker queue before production use.
 
-### 6. Replace mock embeddings and providers
+### 5. Add production authentication and authorization
+
+Replace the development user with real user/session authentication while preserving project and series ownership checks.
+
+### 6. Add visual-generation adapters
 
 Keep provider credentials/configuration outside route handlers. Add provider adapters under `backend/app/providers/`.
+
+The planned production path is cost-aware: generate video at a practical working resolution, upscale to 1080p where appropriate, and run Wan on on-demand NVIDIA GPUs. A 60-minute finished movie is expected to require substantial retry and review budget; early planning estimates are roughly ₹50,000–₹3,00,000 depending on quality, regeneration, GPU choice, and workflow automation.
+
+ElevenLabs is planned for voice generation. The cost is expected to be materially smaller than video generation, but licensing, voice consent, storage, and regeneration must be included in production pricing.
 
 ## Important implementation conventions
 
