@@ -12,6 +12,7 @@ from app.api.v1.production import router as production_router
 from app.api.v1.workflow import router as workflow_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.story import router as story_router
+from app.api.v1.structure import router as structure_router
 
 
 router = APIRouter()
@@ -27,3 +28,4 @@ router.include_router(production_router)
 router.include_router(workflow_router)
 router.include_router(uploads_router)
 router.include_router(story_router)
+router.include_router(structure_router)

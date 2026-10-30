@@ -56,7 +56,7 @@ flowchart LR
 
 ### Frontend
 
-Current frontend is served by FastAPI under `/ui/`.
+The frontend is a separate application on its own port; FastAPI serves only the API (CORS origins set by `CORS_ORIGINS`).
 
 Responsibilities:
 

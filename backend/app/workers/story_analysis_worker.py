@@ -41,12 +41,13 @@ def complete_story_analysis(db, job_id: UUID, metadata: dict):
             text("UPDATE story_sources SET status = 'analysis_complete' WHERE id = :source_id"),
             {"source_id": source_id},
         )
-        # Placeholder estimate until the duration stage exists.
+        # The master script stage sets the real estimate; this only fills it when that stage never ran (mock runs).
         db.execute(
             text(
                 """UPDATE series s SET estimated_duration_seconds = GREATEST(
                        60, CEIL(COALESCE(length(ss.raw_text), 0) / 12.0)::INTEGER), updated_at = now()
-                   FROM story_sources ss WHERE ss.id = :source_id AND ss.series_id = s.id"""
+                   FROM story_sources ss WHERE ss.id = :source_id AND ss.series_id = s.id
+                     AND s.estimated_duration_seconds IS NULL"""
             ),
             {"source_id": source_id},
         )

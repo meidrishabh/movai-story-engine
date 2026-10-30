@@ -1,8 +1,8 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import router as api_router
-from app.core.config import FRONTEND_DIR
+from app.core.settings import settings
 
 
 app = FastAPI(
@@ -10,9 +10,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.include_router(api_router)
-app.mount(
-    "/ui",
-    StaticFiles(directory=FRONTEND_DIR, html=True),
-    name="ui",
+# The UI runs as a separate app on its own port, so the browser needs CORS to call the API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+app.include_router(api_router)

@@ -166,8 +166,8 @@ Without the job runner, uploaded stories stay "queued". `python -m app.workers.j
 The application is available at:
 
 - API: `http://127.0.0.1:8000`
-- UI: `http://127.0.0.1:8000/ui/`
-- Entity review: `http://127.0.0.1:8000/ui/review.html`
+- API docs: `http://127.0.0.1:8000/docs`
+- UI: a separate app on its own port (being rebuilt in React + TypeScript); the API only serves JSON.
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 - Database health: `http://127.0.0.1:8000/health/db`
@@ -271,7 +271,7 @@ A sample story for trying the pipeline is in `docs/samples/happy_flow_story.md`.
 
 Entity extraction reads the whole story in batches and produces characters, locations, objects, events and relationships, each with a quoted piece of evidence checked against the source text. Entities keep stable ids across batches, same-named characters are kept apart by a disambiguation label, and a final pass looks for entries that are the same entity under different names. Results are saved to the database, and uncertain items are marked `needs_review`.
 
-Review them at `/ui/review.html`: approve, edit, merge or unmerge. Hand edits and approvals are kept when the story is analysed again. Details are in [Story Processing Specification](docs/STORY_PROCESSING_SPEC.md).
+Review them through the entities API (a review screen is part of the new UI): approve, edit, merge or unmerge. Hand edits and approvals are kept when the story is analysed again. Details are in [Story Processing Specification](docs/STORY_PROCESSING_SPEC.md).
 
 ## Current status
 

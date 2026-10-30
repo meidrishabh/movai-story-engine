@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Words of story text sent per extraction call.
     analysis_batch_words: int = 6000
 
+    # Comma-separated browser origins allowed to call the API (the separate UI app).
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

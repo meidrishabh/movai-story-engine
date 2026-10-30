@@ -43,6 +43,16 @@ Supported uploads: Markdown and text-layer PDF. OCR is rejected.
 |---|---|---|
 | GET | `/series/{series_id}/pipeline` | Series story status |
 | GET | `/series/{series_id}/analysis-estimate` | Estimated LLM calls, tokens and minimum time for the latest source |
+| GET | `/series/{series_id}/timeline` | Timeline anchors (in story order) and events with their chronological position |
+| GET | `/series/{series_id}/continuity` | Character/object states per event and detected continuity conflicts |
+| GET | `/series/{series_id}/master-script` | Latest master script with its ordered story units and screen-time estimates |
+| GET | `/series/{series_id}/episode-plans` | Draft episode plans (season, title, synopsis, duration, characters) |
+| PATCH | `/episode-plans/{plan_id}` | Edit a draft plan (title, synopsis, hook, climax, ending, note) |
+| POST | `/episode-plans/{plan_id}/approve` | Approve one plan; creates the episode |
+| POST | `/series/{series_id}/episode-plans/approve-all` | Approve every draft plan |
+| POST | `/episode-plans/{plan_id}/reject` | Reject a draft plan (optional `review_note`) |
+| POST | `/episodes/{episode_id}/breakdown` | Queue a scene/shot/dialogue breakdown job (202) |
+| GET | `/episodes/{episode_id}/breakdown` | Scenes with dialogue and shots for an episode |
 | POST | `/series/{series_id}/analyze` | Queue series analysis (409 if one is already queued or running; 400 above the call limit). The response includes the estimate. |
 | POST | `/series/{series_id}/plan-seasons` | Plan seasons |
 | POST | `/seasons/{season_id}/analyze` | Start season analysis |
