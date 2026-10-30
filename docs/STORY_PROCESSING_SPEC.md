@@ -52,3 +52,14 @@ The profile controls retrieval depth and later LLM analysis strategy.
 ## Completion criteria
 
 A source is ready for LLM analysis only when parsing, chunking, and all embedding jobs have succeeded.
+
+## Entity extraction
+
+- Chunks are grouped into batches by word budget (`ANALYSIS_BATCH_WORDS`), starting a new batch at a chapter change once the batch is mostly full.
+- Each call receives the story so far, the entities already known (full detail for those likely to appear in the batch) and the passages, and returns characters, locations, objects, events and relationships with a quoted piece of evidence for each.
+- Entities are merged by stable id, then by name and alias. Two entries sharing a name stay separate when their disambiguation labels differ.
+- Evidence quotes are verified against the batch text. Entries without a verified quote are flagged `needs_review`.
+- If a reply is cut off by the output limit, the batch is split in half and retried. Every reply is stored in `analysis_batches`, so a retried job reuses finished batches.
+- A resolution call then looks for entries that are the same entity (for example a nickname later revealed as a real name). High-confidence groups are merged unless their labels differ; medium-confidence groups are flagged.
+- Results are saved to `characters`, `locations`, `continuity_objects`, `entity_aliases`, `entity_mentions` and `entity_relationships`. Locked and approved entries are preserved on re-analysis.
+- A run stops with a clear error after `LLM_MAX_CALLS_PER_RUN` new calls. Only one analysis can be queued or running per series.
