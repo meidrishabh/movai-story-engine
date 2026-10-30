@@ -74,6 +74,7 @@ def _options(db: Session, series_id: UUID) -> list[dict]:
                                "segments": len(content.get("segments", []))} if ready else None
         if kind == "concentrated":
             item["removed"] = content.get("removed", []) if ready else []
+            item["disputed"] = content.get("disputed", []) if ready else []
             item["saved_seconds"] = content.get("saved_seconds") if ready else None
         items.append(item)
     return items

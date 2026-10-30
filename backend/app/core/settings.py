@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # Comma-separated models tried in order when the main model keeps failing.
     llm_fallback_models: str = ""
     llm_api_key: str = ""
+    # Optional second provider for the filler judge; any blank value falls back to the LLM_* setting above.
+    judge_llm_base_url: str = ""
+    judge_llm_model: str = ""
+    judge_llm_api_key: str = ""
     llm_json_mode: bool = True
     llm_max_tokens: int = 16384
     llm_timeout_seconds: int = 120

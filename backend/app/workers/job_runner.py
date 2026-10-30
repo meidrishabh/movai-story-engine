@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.core.errors import PermanentJobError
 from app.db import SessionLocal
 from app.repositories.analysis_repository import mark_analysis_running
-from app.providers.llm_factory import get_llm_provider
+from app.providers.llm_factory import get_judge_provider, get_llm_provider
 from app.services.adaptation_service import build_highlight, detect_filler, latest_master_script
 from app.services.adaptation_service import run_context as adaptation_context
 from app.services.analysis_pipeline import run_structure_stages
@@ -131,11 +131,12 @@ def run_adaptation(db, job):
     meta = job["request_metadata"]
     series_id, kind = UUID(meta["series_id"]), meta["kind"]
     run_id, profile, story_format = adaptation_context(db, series_id)
-    client = LLMStageClient(get_llm_provider())
+    client = LLMStageClient(get_llm_provider(), get_judge_provider())
     try:
         if kind == "concentrated":
             script = latest_master_script(db, series_id)
             client.forget(db, run_id, "filler", f"{script['id']}:")
+            client.forget(db, run_id, "filler_judge", f"{script['id']}:")
             result = detect_filler(db, client, run_id, series_id, script["id"], profile, story_format)
         else:
             client.forget(db, run_id, "highlight", f"{kind}:")

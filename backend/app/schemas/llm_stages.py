@@ -173,6 +173,16 @@ class FillerResult(_Loose):
     removals: list[FillerItem] = Field(default_factory=list)
 
 
+class JudgeVerdict(_Loose):
+    id: str
+    verdict: str  # "cut" or "keep"
+    reason: str | None = ""
+
+
+class JudgeResult(_Loose):
+    verdicts: list[JudgeVerdict] = Field(default_factory=list)
+
+
 class HighlightSegment(_Loose):
     unit: int | None = None
     description: str = Field(min_length=1)

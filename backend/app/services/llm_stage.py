@@ -11,6 +11,14 @@ from app.providers.llm_base import LLMAnalysisRequest, LLMProvider, LLMProviderE
 from app.repositories.analysis_repository import load_batches, save_batch
 
 
+JUDGE_TASKS = {"filler_judge"}
+
+
+def provider_model(provider: LLMProvider) -> str:
+    models = getattr(provider, "models", None)
+    return models[0] if models else type(provider).__name__
+
+
 @dataclass
 class RunState:
     calls: int = 0
@@ -23,8 +31,9 @@ class RunState:
 class LLMStageClient:
     """One per analysis job, shared by every stage so the call budget is global."""
 
-    def __init__(self, provider: LLMProvider):
+    def __init__(self, provider: LLMProvider, judge_provider: LLMProvider | None = None):
         self.provider = provider
+        self.judge_provider = judge_provider  # a second provider for judge tasks; None means use the main one
         self.state = RunState()
         self._stored: dict[tuple[str, str], dict[str, dict]] = {}
 
@@ -36,7 +45,8 @@ class LLMStageClient:
                 "Finished steps are saved; raise the limit and re-run to continue."
             )
         state.calls += 1
-        response = self.provider.analyze(request)
+        provider = self.judge_provider if self.judge_provider and request.task in JUDGE_TASKS else self.provider
+        response = provider.analyze(request)
         for key in state.usage:
             state.usage[key] += int(response.usage_metadata.get(key) or 0)
         if request.task == "entity_extraction":
