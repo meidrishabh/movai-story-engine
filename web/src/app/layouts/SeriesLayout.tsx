@@ -18,6 +18,7 @@ const STEPS = [
   { to: 'video', label: 'Video', ready: true },
   { to: 'voices', label: 'Voices', ready: true },
   { to: 'sound', label: 'Sound', ready: true },
+  { to: 'keyframes', label: 'Keyframes', ready: true },
 ] as const
 
 export function SeriesLayout() {

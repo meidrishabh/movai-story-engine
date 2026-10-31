@@ -20,6 +20,7 @@ const ReferencesPage = lazy(() => import('../features/references/ReferencesPage'
 const VideoPage = lazy(() => import('../features/video/VideoPage'))
 const VoicesPage = lazy(() => import('../features/sound/VoicesPage'))
 const SoundPage = lazy(() => import('../features/sound/SoundPage'))
+const KeyframesPage = lazy(() => import('../features/keyframes/KeyframesPage'))
 
 export function AppRoutes() {
   return (
@@ -42,6 +43,7 @@ export function AppRoutes() {
           <Route path="video/:episodeId" element={<VideoPage />} />
           <Route path="voices" element={<VoicesPage />} />
           <Route path="sound" element={<SoundPage />} />
+          <Route path="keyframes" element={<KeyframesPage />} />
           <Route path="*" element={<div className="page"><Empty title="Page not found">That step does not exist.</Empty></div>} />
         </Route>
         <Route path="*" element={<div className="page"><Empty title="Page not found">Check the address, or go back to the projects list.</Empty></div>} />
