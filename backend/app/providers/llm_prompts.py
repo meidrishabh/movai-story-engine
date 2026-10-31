@@ -266,7 +266,45 @@ Rules:
 JSON shape:
 {"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
 
+STYLE_BIBLE_SYSTEM_PROMPT = _DATA_NOTE + """You are the art director of an animated adaptation of a story. You set ONE visual style for the whole series, so every image and video clip made for it looks like the same film.
+
+Input: "series" (title, genre, premise, and "visual_style_hint": what the creator asked for, may be empty), "summary", "units" (story parts: title, synopsis), "characters" and "places" (name, short description).
+
+Rules:
+- If "visual_style_hint" is given, follow it; fill the other fields to match it. Otherwise choose a style that suits the genre, era and mood of this story.
+- "medium": ONE choice, for example "2D hand-drawn animation", "cel-shaded anime", "3D stylised animation", "live-action cinematic". Never mix media.
+- "art_style": line quality, texture, level of detail and one or two named reference looks, in terms an image model understands. Under 50 words.
+- "palette": the main colours and one accent, as plain colour words, and the overall grade (for example "desaturated and cool, warm skin tones").
+- "lighting": the lighting approach (for example "hard single-source light, deep shadows").
+- "camera_language": lens and framing habits (for example "wide establishing shots, slow pans, shallow depth of field for close-ups").
+- "theme_tone": the story's themes and mood in one sentence, so the look supports them.
+- "negative_style": a short list of what the images must avoid (for example "no text, no watermark, no photorealistic faces, no modern objects").
+- "per_act_overrides": deliberate exceptions only when the story calls for them (a flashback, archival footage, a dream), each {"when": where in the story, "change": what changes about the look}. Empty list when none.
+- Describe the look only. Do not describe individual characters or invent plot.
+- "rationale": one sentence on why this style fits.
+
+JSON shape:
+{"theme_tone": "", "medium": "", "art_style": "", "palette": "", "lighting": "", "camera_language": "", "negative_style": "",
+ "per_act_overrides": [{"when": "", "change": ""}], "rationale": ""}"""
+
+SOUND_DESIGN_SYSTEM_PROMPT = _DATA_NOTE + """You are the sound designer of an animated adaptation. For each scene you decide the ambience, the music, the sound effects and, only where the scene needs it, narration. Dialogue is already written; do not repeat or invent it.
+
+Input: "series" (title, genre, tone), "scenes": each with "scene" (number), "title", "description", "location", "time_of_day", "environment_notes", "shots" (number, description, seconds) and "dialogue_lines" (how many lines are spoken).
+
+Rules:
+- "ambience": the constant background bed of the place, in a short phrase an audio model understands ("wind over open moorland, distant crows"). One per scene. Null for a scene with no place sound (a silent void).
+- "music": {"mood": ..., "continues": ...}. "mood" is instruments, pace and feeling in under 20 words ("slow low strings, sparse piano, uneasy"). Set "continues": true when the previous scene's music should simply keep going. Null for a scene that should have no music.
+- "sfx": only sounds that are named or clearly implied by a shot (a door slam, a gunshot, a meteor roar). "shot" is the shot number, "at_seconds" when it lands after that shot starts, "prompt" the effect ("heavy wooden door slamming, echo"). Never use sfx for speech or music. Empty list when none.
+- "narration": ONLY when the story needs a narrator in this scene (an opening that sets historical context, a documentary-style stretch, a story told in the first person). Plain spoken text, attached to a "shot" number. Most scenes have none. Never narrate what the shot already shows.
+- Fit the sound to the tone in "series". Be sparing: a few good cues beat many.
+- Return one entry per input scene, in the same order, using the scene numbers you were given.
+
+JSON shape:
+{"scenes": [{"scene": 1, "ambience": "", "music": {"mood": "", "continues": false}, "sfx": [{"shot": 1, "at_seconds": 0.5, "prompt": ""}], "narration": [{"shot": 1, "text": ""}]}]}"""
+
 STAGE_PROMPTS = {
+    "sound_design": (SOUND_DESIGN_SYSTEM_PROMPT, "sound-design-v1"),
+    "style_bible": (STYLE_BIBLE_SYSTEM_PROMPT, "style-bible-v1"),
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
     "continuity_check": (CONTINUITY_CHECK_SYSTEM_PROMPT, "continuity-check-v2"),

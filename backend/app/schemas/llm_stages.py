@@ -249,3 +249,58 @@ class LookResult(_Loose):
     distinctive_features: str | None = None
     color_palette: list[str] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
+
+
+class StyleOverrideOut(_Loose):
+    when: str | None = None
+    change: str | None = None
+
+
+class StyleBibleResult(_Loose):
+    """The look of a whole series: one medium and art style, a palette, lighting and camera habits."""
+
+    @field_validator("theme_tone", "medium", "art_style", "palette", "lighting", "camera_language", "negative_style",
+                     "rationale", mode="before")
+    @classmethod
+    def _join_lists(cls, value):
+        return ", ".join(str(v) for v in value if v) or None if isinstance(value, list) else value
+
+    theme_tone: str | None = None
+    medium: str | None = None
+    art_style: str | None = None
+    palette: str | None = None
+    lighting: str | None = None
+    camera_language: str | None = None
+    negative_style: str | None = None
+    per_act_overrides: list[StyleOverrideOut] = Field(default_factory=list)
+    rationale: str | None = None
+
+
+# ----- sound design ----------------------------------------------------------
+
+class SoundEffectOut(_Loose):
+    shot: int | None = None  # 1-based shot number inside the scene
+    prompt: str = Field(min_length=1)
+    at_seconds: float | None = None  # seconds after the start of that shot
+
+
+class NarrationOut(_Loose):
+    shot: int | None = None
+    text: str = Field(min_length=1)
+
+
+class MusicCueOut(_Loose):
+    mood: str | None = None
+    continues: bool = False  # true: keep the previous scene's music running
+
+
+class SoundSceneOut(_Loose):
+    scene: int
+    ambience: str | None = None
+    music: MusicCueOut | None = None
+    sfx: list[SoundEffectOut] = Field(default_factory=list)
+    narration: list[NarrationOut] = Field(default_factory=list)
+
+
+class SoundDesignResult(_Loose):
+    scenes: list[SoundSceneOut] = Field(default_factory=list)

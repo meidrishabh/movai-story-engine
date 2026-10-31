@@ -355,6 +355,21 @@
   display: grid;
   gap: 6px;
 }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.table th {
+  color: var(--muted);
+  font-weight: 500;
+}
 .scene-dialogue {
   display: grid;
   gap: 4px;

@@ -4,6 +4,7 @@ import { Badge, Card, Empty, ErrorNote, Loading, LinkButton, Notice, PageHeader,
 import { formatDate, plural } from '../../shared/lib/format'
 import { useSeriesId } from '../series/api'
 import { usePipeline } from './api'
+import GenerationPanel from './GenerationPanel'
 import { isRunActive, stageStates } from './stages'
 import type { Attention } from './types'
 
@@ -69,6 +70,7 @@ export default function PipelinePage() {
         </Notice>
       )}
       {run.status === 'succeeded' && <AttentionList attention={pipeline.data.attention} />}
+      {run.status === 'succeeded' && <GenerationPanel seriesId={seriesId} />}
       {active && <p className="muted">This page updates by itself. Long stories can take several minutes.</p>}
     </div>
   )
@@ -80,14 +82,16 @@ function AttentionList({ attention }: { attention: Attention }) {
     { count: attention.open_conflicts, text: (n: number) => `${plural(n, 'continuity conflict')} to check`, to: '../structure' },
     { count: attention.entities_to_review, text: (n: number) => `${plural(n, 'character, place or object')} marked for review`, to: '../characters' },
     { count: attention.draft_plans, text: (n: number) => `${plural(n, 'episode plan')} waiting for approval`, to: '../plans' },
-  ].filter((item) => item.count > 0)
+  ]
+    .filter((item) => item.count > 0)
+    .concat(attention.generation.map((item) => ({ count: item.count, text: () => item.label, to: item.to })))
   if (items.length === 0) return <Notice>Nothing needs your attention.</Notice>
   return (
     <Card>
       <h2>Needs your attention</h2>
       <ul className="event-list">
         {items.map((item) => (
-          <li key={item.to}>
+          <li key={`${item.to}-${item.text(item.count)}`}>
             <Link to={item.to}>{item.text(item.count)}</Link>
           </li>
         ))}

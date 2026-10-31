@@ -7,6 +7,8 @@ from app.api.v1.analysis_results import router as analysis_results_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.characters import router as characters_router
 from app.api.v1.entities import router as entities_router
+from app.api.v1.generation import router as generation_router
+from app.api.v1.references import router as references_router
 from app.api.v1.seasons import router as seasons_router
 from app.api.v1.season_story import router as season_story_router
 from app.api.v1.system import router as system_router
@@ -15,6 +17,11 @@ from app.api.v1.workflow import router as workflow_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.story import router as story_router
 from app.api.v1.structure import router as structure_router
+from app.api.v1.style import router as style_router
+from app.api.v1.video import router as video_router
+from app.api.v1.sound import router as sound_router
+from app.api.v1.generation_overview import router as generation_overview_router
+from app.api.v1.keyframes import router as keyframes_router
 
 
 router = APIRouter()
@@ -33,3 +40,10 @@ router.include_router(workflow_router)
 router.include_router(uploads_router)
 router.include_router(story_router)
 router.include_router(structure_router)
+router.include_router(generation_router)
+router.include_router(style_router)
+router.include_router(references_router)
+router.include_router(video_router)
+router.include_router(sound_router)
+router.include_router(generation_overview_router)
+router.include_router(keyframes_router)

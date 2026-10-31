@@ -163,11 +163,23 @@ python -m app.workers.job_runner
 
 Without the job runner, uploaded stories stay "queued". `python -m app.workers.job_runner --once` processes the queue and exits.
 
+Two rules for the generation stages (images, sound, clips, renders):
+
+- **Restart the job runner after pulling new code.** A running runner keeps the code it started with and will not claim
+  newer job types (`generation_request`, `sound_generation`, `episode_render`); those jobs sit queued.
+- **Run one API and one job runner per checkout, from the same folder.** Generated files are written to
+  `backend/storage/` of the checkout that made them; an API from another checkout cannot serve them.
+
+Generation needs ffmpeg (`winget install Gyan.FFmpeg`, then open a new shell, or set `FFMPEG_PATH`). All media providers
+default to `mock`, so the whole flow runs with placeholder files and no paid service; see `backend/.env.example`.
+
+The web app runs on its own: `cd web`, `npm install`, `npm run dev`.
+
 The application is available at:
 
 - API: `http://127.0.0.1:8000`
 - API docs: `http://127.0.0.1:8000/docs`
-- UI: a separate app on its own port (being rebuilt in React + TypeScript); the API only serves JSON.
+- UI: `http://localhost:5173` (React + TypeScript, started with `npm run dev` in `web/`); the API only serves JSON.
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 - Database health: `http://127.0.0.1:8000/health/db`

@@ -22,6 +22,7 @@ from app.schemas.story import (
     StorySourceCreate,
 )
 from app.services.document_ingestion import prepare_source_document
+from app.services.generation_overview import generation_attention
 from app.services.story_analysis_service import estimate_analysis
 
 
@@ -41,6 +42,7 @@ def _attention(db, series_id: UUID) -> dict:
         "open_conflicts": count("SELECT count(*) FROM continuity_conflicts WHERE series_id = :s AND status = 'open'"),
         "disputed_beats": len(content.get("disputed", [])),
         "draft_plans": count("SELECT count(*) FROM episode_plans p JOIN seasons x ON x.id = p.season_id WHERE x.series_id = :s AND p.status = 'draft'"),
+        "generation": generation_attention(db, series_id),  # items from the image, sound and video stages, each with a link
     }
 
 
