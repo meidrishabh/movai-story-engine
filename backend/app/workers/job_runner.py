@@ -19,6 +19,8 @@ from app.services.adaptation_service import run_context as adaptation_context
 from app.services.analysis_pipeline import run_structure_stages
 from app.services.episode_plan_service import build_episode_plan
 from app.services.episode_repair_service import repair_episodes
+from app.services.sound_service import generate_episode_sound
+from app.services.sound_service import sync_request as sound_sync_request
 from app.services.generation_service import mark_failed as mark_request_failed
 from app.services.generation_service import run_request as run_generation_request
 from app.services.render_service import mark_failed as mark_render_failed
@@ -54,6 +56,8 @@ WHERE id = (
                AND request_metadata ->> 'episode_render_id' IS NOT NULL)
            OR (job_type = 'generation_request'
                AND request_metadata ->> 'generation_request_id' IS NOT NULL)
+           OR (job_type = 'sound_generation'
+               AND request_metadata ->> 'sound_episode_id' IS NOT NULL)
            OR (job_type = 'adaptation_generation'
                AND request_metadata ->> 'series_id' IS NOT NULL)
            OR (job_type = 'episode_segmentation'
@@ -195,6 +199,19 @@ def run_generation(db, job):
             mark_request_failed(db, request_id, f"{type(error).__name__}: {error}")
             db.commit()
         raise
+    try:  # a finished sound cue updates its episode's timings; a failure here must not fail the generation
+        sound_sync_request(db, request_id)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.warning("Could not refresh sound timings after request %s", request_id, exc_info=True)
+    _succeed(db, job, result)
+
+
+def run_sound_generation(db, job):
+    meta = job["request_metadata"]
+    client = LLMStageClient(get_llm_provider())
+    result = generate_episode_sound(db, UUID(meta["sound_episode_id"]), client, bool(meta.get("redesign")))
     _succeed(db, job, result)
 
 
@@ -213,6 +230,7 @@ def run_episode_render(db, job):
 
 HANDLERS = {
     "episode_render": run_episode_render,
+    "sound_generation": run_sound_generation,
     "generation_request": run_generation,
     "adaptation_generation": run_adaptation,
     "episode_segmentation": run_episode_planning,

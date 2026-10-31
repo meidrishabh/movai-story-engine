@@ -16,6 +16,8 @@ const STEPS = [
   { to: 'style', label: 'Style bible', ready: true },
   { to: 'references', label: 'Reference images', ready: true },
   { to: 'video', label: 'Video', ready: true },
+  { to: 'voices', label: 'Voices', ready: true },
+  { to: 'sound', label: 'Sound', ready: true },
 ] as const
 
 export function SeriesLayout() {

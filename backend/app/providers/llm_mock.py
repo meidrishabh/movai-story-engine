@@ -103,7 +103,20 @@ def _mock_style_bible(request: LLMAnalysisRequest) -> dict:
             "rationale": "Mock style for offline runs."}
 
 
+def _mock_sound_design(request: LLMAnalysisRequest) -> dict:
+    scenes = []
+    for scene in request.task_input.get("scenes", []):
+        shots = scene.get("shots") or [{"number": 1}]
+        scenes.append({"scene": scene["scene"], "ambience": f"quiet room tone of {scene.get('location') or 'the place'}",
+                       "music": {"mood": "slow low strings, sparse piano", "continues": scene["scene"] % 3 == 0},
+                       "sfx": [{"shot": shots[0]["number"], "at_seconds": 0.5, "prompt": "soft footsteps on stone"}],
+                       "narration": [{"shot": shots[0]["number"], "text": f"{scene.get('title') or 'The scene'} begins."}]
+                       if scene["scene"] == 1 else []})
+    return {"scenes": scenes}
+
+
 _STAGE_MOCKS = {
+    "sound_design": _mock_sound_design,
     "style_bible": _mock_style_bible,
     "place_look": _mock_look, "object_look": _mock_look,
     "appearance": _mock_appearance,

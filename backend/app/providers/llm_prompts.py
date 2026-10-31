@@ -287,7 +287,23 @@ JSON shape:
 {"theme_tone": "", "medium": "", "art_style": "", "palette": "", "lighting": "", "camera_language": "", "negative_style": "",
  "per_act_overrides": [{"when": "", "change": ""}], "rationale": ""}"""
 
+SOUND_DESIGN_SYSTEM_PROMPT = _DATA_NOTE + """You are the sound designer of an animated adaptation. For each scene you decide the ambience, the music, the sound effects and, only where the scene needs it, narration. Dialogue is already written; do not repeat or invent it.
+
+Input: "series" (title, genre, tone), "scenes": each with "scene" (number), "title", "description", "location", "time_of_day", "environment_notes", "shots" (number, description, seconds) and "dialogue_lines" (how many lines are spoken).
+
+Rules:
+- "ambience": the constant background bed of the place, in a short phrase an audio model understands ("wind over open moorland, distant crows"). One per scene. Null for a scene with no place sound (a silent void).
+- "music": {"mood": ..., "continues": ...}. "mood" is instruments, pace and feeling in under 20 words ("slow low strings, sparse piano, uneasy"). Set "continues": true when the previous scene's music should simply keep going. Null for a scene that should have no music.
+- "sfx": only sounds that are named or clearly implied by a shot (a door slam, a gunshot, a meteor roar). "shot" is the shot number, "at_seconds" when it lands after that shot starts, "prompt" the effect ("heavy wooden door slamming, echo"). Never use sfx for speech or music. Empty list when none.
+- "narration": ONLY when the story needs a narrator in this scene (an opening that sets historical context, a documentary-style stretch, a story told in the first person). Plain spoken text, attached to a "shot" number. Most scenes have none. Never narrate what the shot already shows.
+- Fit the sound to the tone in "series". Be sparing: a few good cues beat many.
+- Return one entry per input scene, in the same order, using the scene numbers you were given.
+
+JSON shape:
+{"scenes": [{"scene": 1, "ambience": "", "music": {"mood": "", "continues": false}, "sfx": [{"shot": 1, "at_seconds": 0.5, "prompt": ""}], "narration": [{"shot": 1, "text": ""}]}]}"""
+
 STAGE_PROMPTS = {
+    "sound_design": (SOUND_DESIGN_SYSTEM_PROMPT, "sound-design-v1"),
     "style_bible": (STYLE_BIBLE_SYSTEM_PROMPT, "style-bible-v1"),
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
