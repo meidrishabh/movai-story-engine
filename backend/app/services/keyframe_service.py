@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.services import consistency_check, generation_service, reference_adapter
 from app.services.asset_store import asset_summary, get_asset, get_storage, save_asset
 from app.services.prompt_builder import build_keyframe_prompt, load_shot_context
+from app.services.scope_service import resolve_scenes
 from app.services.style_bible_service import get_approved
 
 MAX_REFERENCES = 8
@@ -145,14 +146,18 @@ def _retire(db: Session, old: dict, new_id, note: str) -> None:
                        WHERE CAST(:old AS uuid) = ANY(depends_on)"""), {"old": str(old["id"]), "new": str(new_id)})
 
 
-def _shots_of_episode(db: Session, episode_id: UUID) -> list[dict]:
-    return [dict(r) for r in db.execute(
-        text("""SELECT sh.id, sh.shot_number, sc.scene_number FROM shots sh JOIN scenes sc ON sc.id = sh.scene_id
+def _shots_of_episode(db: Session, episode_id: UUID, scene_ids: list | None = None) -> list[dict]:
+    rows = [dict(r) for r in db.execute(
+        text("""SELECT sh.id, sh.shot_number, sc.scene_number, sc.id AS scene_id FROM shots sh JOIN scenes sc ON sc.id = sh.scene_id
                 WHERE sc.episode_id = :e ORDER BY sc.scene_number, sh.shot_number"""), {"e": str(episode_id)}).mappings()]
+    if scene_ids:
+        wanted = {str(s) for s in scene_ids}
+        rows = [r for r in rows if str(r["scene_id"]) in wanted]
+    return rows
 
 
 def generate_for_episode(db: Session, episode_id: UUID, *, shot_ids: list[UUID] | None = None,
-                         regenerate: bool = False) -> dict:
+                         regenerate: bool = False, scene_ids: list | None = None) -> dict:
     """Queue keyframes for an episode's shots in story order. Without `regenerate`, shots that already have a live
     keyframe (in progress, finished, or waiting for review) are left alone; failed ones are tried again. With it, the
     chosen shots (all by default) get a fresh keyframe and the old one is retired. COMMITS after each request so the
@@ -163,7 +168,10 @@ def generate_for_episode(db: Session, episode_id: UUID, *, shot_ids: list[UUID] 
     bible = get_approved(db, series_id)
     if bible is None:
         raise ValueError("Approve the style bible first: every keyframe is built from it")
-    shots = _shots_of_episode(db, episode_id)
+    # Only the chosen scenes: explicit scene_ids, else the episode's saved working scenes, else every scene. Asking for
+    # specific shots (a regenerate) is never narrowed by the scene selection.
+    scope = None if shot_ids else resolve_scenes(db, episode_id, scene_ids)
+    shots = _shots_of_episode(db, episode_id, scope)
     if not shots:
         raise ValueError("This episode has no shots yet; break it down first")
     wanted = {str(s) for s in shot_ids} if shot_ids else None
@@ -202,7 +210,7 @@ def _present_keyframe(db: Session, row: dict, attempts: int) -> dict:
             "created_at": row["created_at"], "result": asset_summary(asset)}
 
 
-def episode_grid(db: Session, episode_id: UUID) -> dict:
+def episode_grid(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict:
     episode = db.execute(text("SELECT id, series_id, episode_number, title FROM episodes WHERE id = :e"),
                          {"e": str(episode_id)}).mappings().first()
     if episode is None:
@@ -212,6 +220,9 @@ def episode_grid(db: Session, episode_id: UUID) -> dict:
                        sh.id AS shot_id, sh.shot_number, sh.description, sh.camera, sh.duration_seconds, sh.character_ids
                 FROM scenes sc JOIN shots sh ON sh.scene_id = sc.id WHERE sc.episode_id = :e
                 ORDER BY sc.scene_number, sh.shot_number"""), {"e": str(episode_id)}).mappings().all()
+    working = resolve_scenes(db, episode_id, scene_ids)
+    if working:
+        rows = [r for r in rows if str(r["scene_id"]) in working]
     shot_ids = [str(r["shot_id"]) for r in rows]
     current = _current(db, shot_ids)
     attempts = {}
@@ -248,7 +259,8 @@ def episode_grid(db: Session, episode_id: UUID) -> dict:
             "keyframe": _present_keyframe(db, keyframe, attempts.get(sid, 1)) if keyframe else None})
     approved = get_approved(db, episode["series_id"]) is not None
     return {"episode": {"id": str(episode["id"]), "episode_number": episode["episode_number"], "title": episode["title"]},
-            "style_approved": approved, "totals": totals, "scenes": list(scenes.values())}
+            "style_approved": approved, "totals": totals, "scenes": list(scenes.values()),
+            "working_scene_ids": working}
 
 
 def series_overview(db: Session, series_id: UUID) -> dict:
@@ -262,7 +274,9 @@ def series_overview(db: Session, series_id: UUID) -> dict:
                        count(*) FILTER (WHERE l.status IN ('queued', 'blocked', 'running', 'awaiting_input')) AS working,
                        count(*) FILTER (WHERE l.status = 'failed') AS failed
                 FROM episodes e JOIN scenes sc ON sc.episode_id = e.id JOIN shots sh ON sh.scene_id = sc.id
+                LEFT JOIN episode_working_scenes w ON w.episode_id = e.id
                 LEFT JOIN latest l ON l.target_id = sh.id
-                WHERE e.series_id = :s GROUP BY e.id ORDER BY e.episode_number"""), {"s": str(series_id)}).mappings().all()
+                WHERE e.series_id = :s AND (w.scene_ids IS NULL OR cardinality(w.scene_ids) = 0 OR sc.id = ANY(w.scene_ids))
+                GROUP BY e.id ORDER BY e.episode_number"""), {"s": str(series_id)}).mappings().all()
     return {"style_approved": get_approved(db, series_id) is not None, "count": len(rows),
             "items": [{**dict(r), "id": str(r["id"])} for r in rows]}

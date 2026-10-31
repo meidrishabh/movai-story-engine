@@ -11,9 +11,18 @@ from sqlalchemy.orm import Session
 
 from app.core.settings import settings
 from app.services import generation_service as generation
-from app.services import video_service
+from app.services import scope_service, video_service
 
 REFERENCE_KINDS = ("style_anchor", "character_image", "place_image", "object_image")
+
+# Shots of the scenes the user is working on: every shot of an episode with no saved working scenes. The attention
+# list only counts these, so unselected scenes never nag.
+WORKING_SHOTS = """(SELECT sh.id FROM shots sh JOIN scenes sc ON sc.id = sh.scene_id
+                    LEFT JOIN episode_working_scenes w ON w.episode_id = sc.episode_id
+                    WHERE w.scene_ids IS NULL OR cardinality(w.scene_ids) = 0 OR sc.id = ANY(w.scene_ids))"""
+WORKING_CUES = """(SELECT c.id FROM sound_cues c LEFT JOIN episode_working_scenes w ON w.episode_id = c.episode_id
+                   WHERE c.scene_id IS NULL OR w.scene_ids IS NULL OR cardinality(w.scene_ids) = 0
+                      OR c.scene_id = ANY(w.scene_ids))"""
 
 
 def _array(values) -> str:
@@ -68,15 +77,19 @@ def generation_attention(db: Session, series_id: UUID) -> list[dict]:
     if not count("SELECT count(*) FROM style_bibles WHERE series_id = :s AND status = 'approved'"):
         items.append({"key": "style_bible", "count": 1, "label": "The style bible is not approved yet", "to": "../style"})
 
-    latest_refs = """SELECT DISTINCT ON (kind, COALESCE(target_id::text, id::text), COALESCE(params ->> 'view', ''))
+    allowed = scope_service.in_scope_target_ids(db, series_id)  # None = no limit on the reference scope
+    scope_clause = "AND (target_id IS NULL OR target_id = ANY(CAST(:allowed AS uuid[])))" if allowed is not None else ""
+    latest_refs = f"""SELECT DISTINCT ON (kind, COALESCE(target_id::text, id::text), COALESCE(params ->> 'view', ''))
                             status, review_status, drift_flag
-                     FROM generation_requests WHERE series_id = :s AND kind = ANY(CAST(:k AS text[]))
+                     FROM generation_requests WHERE series_id = :s AND kind = ANY(CAST(:k AS text[])) {scope_clause}
                      ORDER BY kind, COALESCE(target_id::text, id::text), COALESCE(params ->> 'view', ''), created_at DESC"""
     refs = db.execute(text(f"""SELECT count(*) FILTER (WHERE status = 'failed') AS failed,
                                      count(*) FILTER (WHERE status = 'succeeded' AND review_status = 'pending' AND drift_flag) AS flagged,
                                      count(*) FILTER (WHERE status = 'succeeded' AND review_status = 'pending'
                                                       AND NOT COALESCE(drift_flag, false)) AS waiting
-                              FROM ({latest_refs}) x"""), {**params, "k": _array(REFERENCE_KINDS)}).mappings().one()
+                              FROM ({latest_refs}) x"""),
+                      {**params, "k": _array(REFERENCE_KINDS), **({"allowed": _array(allowed)} if allowed is not None else {})}
+                      ).mappings().one()
     items += [
         _item("references_flagged", refs["flagged"], "reference image flagged as drifting from its references",
               "reference images flagged as drifting from their references", "../references"),
@@ -85,11 +98,12 @@ def generation_attention(db: Session, series_id: UUID) -> list[dict]:
               "reference images waiting for approval", "../references"),
     ]
 
-    keyframes = db.execute(text("""SELECT count(*) FILTER (WHERE status = 'failed') AS failed,
+    keyframes = db.execute(text(f"""SELECT count(*) FILTER (WHERE status = 'failed') AS failed,
                                           count(*) FILTER (WHERE review_status = 'rejected') AS rejected,
                                           count(*) FILTER (WHERE checks ->> 'status' = 'flagged' AND review_status = 'pending') AS flagged
                                    FROM (SELECT DISTINCT ON (target_id) status, review_status, checks FROM generation_requests
-                                         WHERE series_id = :s AND kind = 'keyframe' ORDER BY target_id, created_at DESC) x"""),
+                                         WHERE series_id = :s AND kind = 'keyframe' AND target_id IN {WORKING_SHOTS}
+                                         ORDER BY target_id, created_at DESC) x"""),
                            params).mappings().one()
     items += [
         _item("keyframes_failed", keyframes["failed"], "keyframe failed", "keyframes failed", "../keyframes"),
@@ -99,24 +113,25 @@ def generation_attention(db: Session, series_id: UUID) -> list[dict]:
     ]
 
     items += [
-        _item("sound_overflow", count("""SELECT count(*) FROM sound_shot_fits f JOIN episodes e ON e.id = f.episode_id
-                                         WHERE e.series_id = :s AND f.status = 'overflow'"""),
+        _item("sound_overflow", count(f"""SELECT count(*) FROM sound_shot_fits f JOIN episodes e ON e.id = f.episode_id
+                                         WHERE e.series_id = :s AND f.status = 'overflow' AND f.shot_id IN {WORKING_SHOTS}"""),
               "shot where the speech is longer than the shot", "shots where the speech is longer than the shot", "../sound"),
         _item("voices_no_consent", count("""SELECT count(*) FROM voice_casts WHERE series_id = :s AND voice <> ''
                                             AND NOT consent_given"""),
               "voice without recorded consent", "voices without recorded consent", "../voices"),
-        _item("sound_failed", count("""SELECT count(*) FROM (SELECT DISTINCT ON (target_id) status FROM generation_requests
-                                       WHERE series_id = :s AND target_type = 'sound_cue'
+        _item("sound_failed", count(f"""SELECT count(*) FROM (SELECT DISTINCT ON (target_id) status FROM generation_requests
+                                       WHERE series_id = :s AND target_type = 'sound_cue' AND target_id IN {WORKING_CUES}
                                        ORDER BY target_id, created_at DESC) x WHERE status = 'failed'"""),
               "sound request failed", "sound requests failed", "../sound"),
     ]
 
-    clips = db.execute(text("""SELECT count(*) FILTER (WHERE r.status = 'failed') AS failed,
+    clips = db.execute(text(f"""SELECT count(*) FILTER (WHERE r.status = 'failed') AS failed,
                                       count(*) FILTER (WHERE r.status = 'succeeded' AND a.duration_seconds IS NOT NULL
                                            AND a.duration_seconds < sh.duration_seconds - :tol
                                            AND NOT COALESCE((r.params ->> 'hold_last_frame')::boolean, false)) AS short
                                FROM (SELECT DISTINCT ON (target_id) * FROM generation_requests
-                                     WHERE series_id = :s AND kind = 'video_clip' ORDER BY target_id, created_at DESC) r
+                                     WHERE series_id = :s AND kind = 'video_clip' AND target_id IN {WORKING_SHOTS}
+                                     ORDER BY target_id, created_at DESC) r
                                JOIN shots sh ON sh.id = r.target_id LEFT JOIN assets a ON a.id = r.result_asset_id"""),
                        {**params, "tol": settings.clip_duration_tolerance}).mappings().one()
     items += [

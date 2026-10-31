@@ -26,6 +26,7 @@ from app.media.errors import ClipTooShortError, MediaError
 from app.media.runner import Profile, default_profile
 from app.media.stills import still_clip
 from app.services import video_service as video
+from app.services.scope_service import resolve_scenes
 from app.services.asset_store import asset_summary, get_asset, save_asset
 
 log = logging.getLogger("render")
@@ -72,10 +73,11 @@ def get_render(db: Session, render_id: UUID) -> dict | None:
 
 # --- inputs --------------------------------------------------------------------------------------------------------
 
-def _gather(db: Session, episode_id: UUID, kind: str) -> tuple[dict, list[dict], dict]:
-    """The episode, its shots with the keyframe and clip each render will use, and the problems found."""
+def _gather(db: Session, episode_id: UUID, kind: str, scene_ids: list | None = None) -> tuple[dict, list[dict], dict]:
+    """The episode, its shots (only those of `scene_ids` when given) with the keyframe and clip each render will use,
+    and the problems found. A final export's 'every shot needs an approved clip' applies to these shots only."""
     episode = video.get_episode(db, episode_id)
-    shots = video.shot_rows(db, episode_id)
+    shots = video.shot_rows(db, episode_id, scene_ids)
     ids = [s["shot_id"] for s in shots]
     keyframes = video.requests_by_shot(db, episode["series_id"], "keyframe", ids)
     clips = video.requests_by_shot(db, episode["series_id"], "video_clip", ids)
@@ -96,11 +98,13 @@ def _gather(db: Session, episode_id: UUID, kind: str) -> tuple[dict, list[dict],
     return episode, rows, problems
 
 
-def create_render(db: Session, episode_id: UUID, kind: str) -> dict:
-    """Queue a render job. A final export is refused until every shot has an approved clip. The caller commits."""
+def create_render(db: Session, episode_id: UUID, kind: str, scene_ids: list | None = None) -> dict:
+    """Queue a render job for the chosen scenes (explicit `scene_ids`, else the saved working scenes, else the whole
+    episode). A final export is refused until every shot of those scenes has an approved clip. The caller commits."""
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {', '.join(KINDS)}")
-    episode, rows, problems = _gather(db, episode_id, kind)
+    chosen = resolve_scenes(db, episode_id, scene_ids)
+    episode, rows, problems = _gather(db, episode_id, kind, chosen)
     if not rows:
         raise ValueError("The episode has no shots yet")
     if kind == "final" and (problems["missing_clip"] or problems["unapproved_clip"]):
@@ -115,8 +119,10 @@ def create_render(db: Session, episode_id: UUID, kind: str) -> dict:
     if active:
         raise ValueError(f"A {kind} render is already in progress")
     row = db.execute(
-        text("""INSERT INTO episode_renders (series_id, episode_id, kind, status) VALUES (:s, :e, :k, 'queued')
-                RETURNING *"""), {"s": str(episode["series_id"]), "e": str(episode_id), "k": kind}).mappings().one()
+        text("""INSERT INTO episode_renders (series_id, episode_id, kind, status, scene_ids)
+                VALUES (:s, :e, :k, 'queued', CAST(:sc AS uuid[])) RETURNING *"""),
+        {"s": str(episode["series_id"]), "e": str(episode_id), "k": kind,
+         "sc": ("{" + ",".join(chosen) + "}") if chosen else None}).mappings().one()
     db.execute(
         text("""INSERT INTO generation_jobs (job_type, status, provider, request_metadata)
                 VALUES ('episode_render', 'queued', 'media', CAST(:m AS jsonb))"""),
@@ -126,11 +132,11 @@ def create_render(db: Session, episode_id: UUID, kind: str) -> dict:
 
 # --- the render -----------------------------------------------------------------------------------------------------
 
-def _audio_plan(db: Session, episode_id: UUID) -> dict[str, dict]:
+def _audio_plan(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict[str, dict]:
     """Per shot: audio tracks and subtitles from sound_service's audio plan, in the shape assemble_episode takes."""
     from app.services.sound_service import build_audio_plan  # imported here: sound_service imports generation code
     try:
-        plan = build_audio_plan(db, episode_id) or {}
+        plan = build_audio_plan(db, episode_id, scene_ids=scene_ids) or {}
     except Exception:  # noqa: BLE001 - a broken sound plan must not stop the picture
         log.warning("build_audio_plan failed for episode %s; rendering without audio", episode_id, exc_info=True)
         return {}
@@ -207,12 +213,13 @@ def run_render(db: Session, render_id: UUID) -> dict:
 
 def _build(db: Session, render: dict) -> dict:
     kind, episode_id = render["kind"], render["episode_id"]
-    episode, rows, problems = _gather(db, episode_id, kind)
+    scene_ids = [str(s) for s in render["scene_ids"]] if render.get("scene_ids") else None
+    episode, rows, problems = _gather(db, episode_id, kind, scene_ids)
     if kind == "final" and (problems["missing_clip"] or problems["unapproved_clip"]):
         raise ValueError("Every shot needs an approved clip before the final export")
     profile = default_profile() if kind == "final" else working_profile()
     work = video.work_root() / str(episode["series_id"]) / str(episode_id) / f"{kind}-{profile.width}x{profile.height}"
-    plan = _audio_plan(db, episode_id)
+    plan = _audio_plan(db, episode_id, scene_ids)
     assets = video.assets_by_id(db, [r["clip"]["result_asset_id"] for r in rows if r["clip"]]
                                 + [r["keyframe"]["result_asset_id"] for r in rows if r["keyframe"]])
     shots, stills, auto_hold = [], [], []
@@ -253,6 +260,9 @@ def _build(db: Session, render: dict) -> dict:
                 stills.append(key)
         shots.append(entry)
     name = f"episode-{episode['episode_number']}"
+    if scene_ids:  # a partial episode gets its own file names, so it never overwrites the whole-episode render
+        numbers = sorted({r["shot"]["scene_number"] for r in rows})
+        name += "-scenes-" + "-".join(str(n) for n in numbers[:6]) + ("-etc" if len(numbers) > 6 else "")
     result = assemble_episode(shots, work, profile=profile, subtitle_mode="soft" if kind == "final" else "burn",
                               episode_name=name)
     series_id = episode["series_id"]
@@ -285,7 +295,8 @@ def _build(db: Session, render: dict) -> dict:
     details = {"episode_key": episode_key, "profile": {"width": info.width, "height": info.height, "fps": profile.fps},
                "scenes": scenes_out, "shots": [{**s, "path": None} for s in result.shots],
                "rebuilt_shots": result.rebuilt_shots, "rebuilt_scenes": result.rebuilt_scenes, "unchanged": reused,
-               "stills": stills, "auto_hold": auto_hold, "audio": bool(plan)}
+               "stills": stills, "auto_hold": auto_hold, "audio": bool(plan),
+               "scene_numbers": sorted({r["shot"]["scene_number"] for r in rows}) if scene_ids else None}
     db.execute(text("""UPDATE episode_renders SET status = 'succeeded', asset_id = :a, subtitle_asset_id = :sub,
                        duration_seconds = :d, details = CAST(:details AS jsonb), completed_at = now() WHERE id = :r"""),
                {"a": asset_id, "sub": subtitle_asset_id, "d": round(info.duration, 2),

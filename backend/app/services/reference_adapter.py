@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services import reference_service
+from app.services.scope_service import scope_filter
 
 ROLE_KIND = {"character": "character_image", "place": "place_image", "object": "object_image"}
 PER_ENTITY = {"character": 2, "place": 1, "object": 1}  # e.g. front and three-quarter view of a character
@@ -50,6 +51,7 @@ def collect(db: Session, series_id: UUID, slots: list[dict], max_total: int = 8)
     -> {"asset_ids": [UUID], "labels": {asset_id: label}, "wait_for": [UUID], "warnings": [str]}"""
     per_slot: list[list[tuple[UUID, str]]] = []
     wait_for, warnings = [], []
+    scope = scope_filter(db, series_id)  # out-of-scope entities are never waited for
     for slot in slots:
         role = slot["role"]
         if role == "style_anchor":
@@ -66,10 +68,13 @@ def collect(db: Session, series_id: UUID, slots: list[dict], max_total: int = 8)
                          for n, a in enumerate(found, start=1)])
         if found:
             continue
-        pending = pending_request(db, series_id, role, targets)
+        allowed = scope.allows(role, slot.get("entity_id")) if slot.get("entity_id") else True
+        pending = pending_request(db, series_id, role, targets) if allowed else None
         if pending:
             wait_for.append(pending)
             warnings.append(f"{slot['label']}: reference image is not approved yet")
+        elif not allowed:
+            warnings.append(f"{slot['label']}: not in scope, made without a reference image")
         else:
             warnings.append(f"{slot['label']}: no reference image")
     asset_ids, labels = [], {}

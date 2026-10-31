@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/v1", tags=["keyframes"])
 class GenerateKeyframes(BaseModel):
     shot_ids: list[UUID] | None = Field(default=None, description="Only these shots; default is every shot of the episode")
     regenerate: bool = Field(default=False, description="Make a fresh keyframe even where one exists")
+    scene_ids: list[UUID] | None = Field(default=None, description="Only these scenes; default is the episode's saved working scenes, else every scene")
 
 
 def _shot_series(db: Session, shot_id: UUID) -> UUID:
@@ -51,7 +52,8 @@ def generate_keyframes(episode_id: UUID, payload: GenerateKeyframes | None = Non
     _episode_series(db, episode_id)
     payload = payload or GenerateKeyframes()
     try:
-        return keyframe_service.generate_for_episode(db, episode_id, shot_ids=payload.shot_ids, regenerate=payload.regenerate)
+        return keyframe_service.generate_for_episode(db, episode_id, shot_ids=payload.shot_ids, regenerate=payload.regenerate,
+                                                     scene_ids=payload.scene_ids)
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.v1.entities import _episode_series, _series_owned
+from app.services.scope_service import resolve_scenes
 from app.services import sound_service as sound
 from app.services import voice_cast_service as casting
 
@@ -30,6 +31,7 @@ class VoicePreview(BaseModel):
 
 class GenerateSound(BaseModel):
     redesign: bool = False
+    scene_ids: list[UUID] | None = None  # default: the episode's saved working scenes, else every scene
 
 
 class SoundReview(BaseModel):
@@ -88,7 +90,8 @@ def generate_episode_sound(episode_id: UUID, payload: GenerateSound | None = Non
     """Queue the job that designs the cues and makes every sound. Needs the job runner."""
     _episode_series(db, episode_id)
     try:
-        job = sound.queue_sound_job(db, episode_id, bool(payload and payload.redesign))
+        job = sound.queue_sound_job(db, episode_id, bool(payload and payload.redesign),
+                                    payload.scene_ids if payload else None)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     db.commit()
@@ -139,7 +142,7 @@ def apply_sound_fit(episode_id: UUID, payload: ApplyFit | None = None, db: Sessi
 @router.post("/episodes/{episode_id}/subtitles/build")
 def build_episode_subtitles(episode_id: UUID, db: Session = Depends(get_db)):
     _episode_series(db, episode_id)
-    result = sound.build_subtitles(db, episode_id)
+    result = sound.build_subtitles(db, episode_id)  # the saved working scenes, else every scene
     db.commit()
     return result
 
@@ -154,7 +157,7 @@ def get_episode_subtitles(episode_id: UUID, db: Session = Depends(get_db)):
 def get_audio_plan(episode_id: UUID, db: Session = Depends(get_db)):
     """What the video step mixes per shot. File paths are local, so only asset-free fields are echoed here."""
     _episode_series(db, episode_id)
-    plan = sound.build_audio_plan(db, episode_id)
+    plan = sound.build_audio_plan(db, episode_id, resolve_scenes(db, episode_id))
     db.commit()
     return {shot_id: {"audio_tracks": [{k: v for k, v in t.items() if k != "path"} for t in item["audio_tracks"]],
                       "subtitles": item["subtitles"]} for shot_id, item in plan.items()}

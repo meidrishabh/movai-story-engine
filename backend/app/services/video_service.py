@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.settings import settings
 from app.media import ops
 from app.media.errors import MediaError
+from app.services.scope_service import resolve_scenes
 from app.services import generation_service as generation
 from app.services import style_bible_service
 from app.services.asset_store import asset_summary, get_asset, get_storage, storage_root
@@ -61,12 +62,16 @@ def get_episode(db: Session, episode_id: UUID) -> dict:
     return dict(row)
 
 
-def shot_rows(db: Session, episode_id: UUID) -> list[dict]:
+def shot_rows(db: Session, episode_id: UUID, scene_ids: list | None = None) -> list[dict]:
+    """The episode's shots in story order; only those of `scene_ids` when given."""
     rows = db.execute(
         text("""SELECT sh.id AS shot_id, sh.scene_id, sc.scene_number, sc.title AS scene_title, sh.shot_number,
                        sh.description, sh.camera, sh.duration_seconds, sh.character_ids
                 FROM shots sh JOIN scenes sc ON sc.id = sh.scene_id
                 WHERE sc.episode_id = :e ORDER BY sc.scene_number, sh.shot_number"""), {"e": str(episode_id)}).mappings().all()
+    if scene_ids:
+        wanted = {str(s) for s in scene_ids}
+        rows = [r for r in rows if str(r["scene_id"]) in wanted]
     return [dict(r) for r in rows]
 
 
@@ -259,11 +264,16 @@ def working_size() -> tuple[int, int]:
 
 def plan_clips(db: Session, episode_id: UUID, *, limit: int | None = None, scene_id: UUID | None = None,
                allow_text_to_video: bool = False, allow_unapproved_keyframes: bool = False,
-               hold_last_frame: bool = False) -> dict:
-    """One video request per shot that has no clip request yet, at the low-res working size. The caller commits."""
+               hold_last_frame: bool = False, scene_ids: list | None = None, shot_ids: list | None = None) -> dict:
+    """One video request per shot that has no clip request yet, at the low-res working size. Only the chosen scenes:
+    `scene_id`, else `scene_ids`, else the episode's saved working scenes, else every scene. The caller commits."""
     episode = get_episode(db, episode_id)
     series_id = episode["series_id"]
-    shots = [s for s in shot_rows(db, episode_id) if not scene_id or str(s["scene_id"]) == str(scene_id)]
+    chosen = [str(scene_id)] if scene_id else resolve_scenes(db, episode_id, scene_ids)
+    shots = shot_rows(db, episode_id, chosen)
+    if shot_ids:  # specific shots (a promo's) are never narrowed by the scene selection
+        wanted = {str(s) for s in shot_ids}
+        shots = [s for s in shot_rows(db, episode_id) if str(s["shot_id"]) in wanted]
     shot_ids = [s["shot_id"] for s in shots]
     keyframes = requests_by_shot(db, series_id, "keyframe", shot_ids)
     clips = requests_by_shot(db, series_id, "video_clip", shot_ids)
@@ -374,13 +384,14 @@ def _request_view(row: dict, asset: dict | None) -> dict:
             "provider": row["provider"], "asset": asset_summary(asset)}
 
 
-def board(db: Session, episode_id: UUID) -> dict:
+def board(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict:
     """Everything the clip board shows for an episode: per shot the keyframe and clip, the budget and the renders."""
     from app.services import render_service  # imported here: render_service imports this module
 
     episode = get_episode(db, episode_id)
     series_id = episode["series_id"]
-    shots = shot_rows(db, episode_id)
+    working = resolve_scenes(db, episode_id, scene_ids)
+    shots = shot_rows(db, episode_id, working)
     shot_ids = [s["shot_id"] for s in shots]
     keyframes = requests_by_shot(db, series_id, "keyframe", shot_ids)
     clips = requests_by_shot(db, series_id, "video_clip", shot_ids)
@@ -427,6 +438,6 @@ def board(db: Session, episode_id: UUID) -> dict:
     db.commit()  # probing remembers each clip's real length
     return {"episode": {"id": str(episode["id"]), "series_id": str(series_id), "episode_number": episode["episode_number"],
                         "title": episode["title"]},
-            "budget": get_budget(db, episode_id), "shots": items,
+            "budget": get_budget(db, episode_id), "shots": items, "working_scene_ids": working,
             "summary": {"shots": len(items), "with_keyframe": sum(1 for i in items if i["keyframe"]), **counts},
             "renders": render_service.latest_renders(db, episode_id)}

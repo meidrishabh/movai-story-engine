@@ -115,7 +115,31 @@ def _mock_sound_design(request: LLMAnalysisRequest) -> dict:
     return {"scenes": scenes}
 
 
+def _mock_promo_plan(request: LLMAnalysisRequest) -> dict:
+    promo = request.task_input.get("promo", {})
+    series = request.task_input.get("series", {})
+    target = float(promo.get("target_seconds") or 20)
+    teaser = promo.get("kind") == "teaser"
+    limit = 0.7 if teaser else 0.92
+    pool = [c for c in request.task_input.get("candidates", []) if (c.get("position") or 0) < limit] \
+        or request.task_input.get("candidates", [])
+    closing, per_shot = 2.5, 3.0 if teaser else 2.5
+    count = max(1, min(len(pool), int((target - closing) // per_shot)))
+    step = max(len(pool) // count, 1)
+    chosen = pool[::step][:count]
+    items = [{"type": "shot", "ref": c["ref"], "seconds": min(per_shot, float(c.get("seconds") or per_shot)), "start_offset": 0.0,
+              "reason": "mock pick, spread across the story"} for c in chosen]
+    if not teaser and len(items) > 3:
+        items.insert(len(items) // 2, {"type": "title_card", "text": "Nothing will be the same", "seconds": 2.0})
+        items.insert(2, {"type": "narration", "text": f"Some stories change everything."})
+    items.append({"type": "title_card", "text": series.get("title") or promo.get("title") or "Coming soon",
+                  "subtitle": "Coming soon", "seconds": closing})
+    return {"hook": "A mock hook for offline runs.", "music_mood": "slow low strings building to a pulse", "items": items,
+            "notes": "Mock plan: even spread across the story, closing title card."}
+
+
 _STAGE_MOCKS = {
+    "promo_plan": _mock_promo_plan,
     "sound_design": _mock_sound_design,
     "style_bible": _mock_style_bible,
     "place_look": _mock_look, "object_look": _mock_look,

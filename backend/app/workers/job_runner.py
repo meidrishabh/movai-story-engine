@@ -28,6 +28,8 @@ from app.services.render_service import run_render
 from app.services.llm_stage import LLMStageClient
 from app.services.appearance_service import generate_for_series as generate_appearance
 from app.services.scene_breakdown_service import build_scene_breakdown
+from app.services.promo_render_service import mark_failed as mark_promo_render_failed
+from app.services.promo_render_service import run_render as run_promo_render_service
 from app.workers.embedding_job import process_embedding_job
 from app.workers.story_analysis_worker import complete_story_analysis, process_entity_extraction
 
@@ -54,6 +56,8 @@ WHERE id = (
                AND request_metadata ->> 'episode_id' IS NOT NULL)
            OR (job_type = 'episode_render'
                AND request_metadata ->> 'episode_render_id' IS NOT NULL)
+           OR (job_type = 'promo_render'
+               AND request_metadata ->> 'promo_render_id' IS NOT NULL)
            OR (job_type = 'generation_request'
                AND request_metadata ->> 'generation_request_id' IS NOT NULL)
            OR (job_type = 'sound_generation'
@@ -211,7 +215,8 @@ def run_generation(db, job):
 def run_sound_generation(db, job):
     meta = job["request_metadata"]
     client = LLMStageClient(get_llm_provider())
-    result = generate_episode_sound(db, UUID(meta["sound_episode_id"]), client, bool(meta.get("redesign")))
+    result = generate_episode_sound(db, UUID(meta["sound_episode_id"]), client, bool(meta.get("redesign")),
+                                    scene_ids=meta.get("scene_ids") or None)
     _succeed(db, job, result)
 
 
@@ -228,7 +233,21 @@ def run_episode_render(db, job):
     _succeed(db, job, result)
 
 
+def run_promo_render(db, job):
+    render_id = UUID(job["request_metadata"]["promo_render_id"])
+    try:
+        result = run_promo_render_service(db, render_id)
+    except Exception as error:  # noqa: BLE001 - record the failure on the render, then let the runner retry or give up
+        db.rollback()
+        if isinstance(error, PermanentJobError) or job["attempt_count"] >= job["max_attempts"]:
+            mark_promo_render_failed(db, render_id, f"{type(error).__name__}: {error}")
+            db.commit()
+        raise
+    _succeed(db, job, result)
+
+
 HANDLERS = {
+    "promo_render": run_promo_render,
     "episode_render": run_episode_render,
     "sound_generation": run_sound_generation,
     "generation_request": run_generation,

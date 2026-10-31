@@ -1,0 +1,36 @@
+.scope-scenes,
+.scope-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.scope-scenes label {
+  gap: 10px;
+  cursor: pointer;
+}
+.scope-scenes .mono {
+  margin-left: auto;
+}
+.scope-quick,
+.scope-refs {
+  flex-wrap: wrap;
+}
+.scope-checklist {
+  margin-top: var(--gap);
+  padding-top: var(--gap);
+  border-top: 1px solid var(--line);
+}
+.scope-refs-list {
+  display: grid;
+  gap: 4px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.scope-refs-list label {
+  gap: 8px;
+  cursor: pointer;
+}
