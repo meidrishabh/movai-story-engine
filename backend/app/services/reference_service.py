@@ -111,11 +111,12 @@ def _best_asset_ids(db: Session, kind: str, targets: list, views: dict, max_per_
     order = list(views)
     by_target: dict[str, list[dict]] = {}
     for row in _approved_rows(db, kind, targets):
-        if row["view"] in order:
+        if row["view"] is None or row["view"] in order:  # a request made by hand has no view; it ranks last
             by_target.setdefault(str(row["target_id"]), []).append(row)
     out: list[str] = []
     for target_rows in by_target.values():
-        for row in sorted(target_rows, key=lambda r: order.index(r["view"]))[:max_per_target]:
+        ranked = sorted(target_rows, key=lambda r: order.index(r["view"]) if r["view"] in order else len(order))
+        for row in ranked[:max_per_target]:
             if str(row["result_asset_id"]) not in out:
                 out.append(str(row["result_asset_id"]))
     return out

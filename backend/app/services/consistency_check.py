@@ -44,8 +44,8 @@ def run_check(db: Session, request_id: UUID) -> dict:
     else:
         try:
             verdict = judge(db, dict(row)) or {}
-            result = {"status": "flagged" if verdict.get("flagged") else "passed", "score": verdict.get("score"),
-                      "notes": verdict.get("notes", "")}
+            status = "flagged" if verdict.get("flagged") else "passed" if verdict.get("score") is not None else "skipped"
+            result = {"status": status, "score": verdict.get("score"), "notes": verdict.get("notes", "")}
         except Exception as error:  # noqa: BLE001 - a judge failure must not fail the keyframe
             log.warning("Consistency judge failed for %s: %s", request_id, error)
             result = {"status": "skipped", "notes": f"The judge failed: {str(error)[:200]}"}

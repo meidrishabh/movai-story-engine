@@ -208,7 +208,9 @@ def _episode_of_shot(db: Session, shot_id) -> str | None:
 
 
 def hold_reason(db: Session, row) -> str | None:
-    """Why a queued clip request must not run now: 'paused', 'budget', or None."""
+    """Why a queued request must not run now: 'series_paused' (any kind), or for a clip 'paused' / 'budget'; else None."""
+    if db.execute(text("SELECT paused FROM generation_controls WHERE series_id = :s"), {"s": str(row["series_id"])}).scalar():
+        return "series_paused"
     if row["kind"] != "video_clip":
         return None
     episode_id = (row["params"] or {}).get("episode_id") or (_episode_of_shot(db, row["target_id"]) if row["target_id"] else None)

@@ -19,6 +19,43 @@ export interface Attention {
   open_conflicts: number
   disputed_beats: number
   draft_plans: number
+  /** Items from the image, sound and video stages; `to` is a route relative to the series page. */
+  generation: GenerationAttention[]
+}
+
+export interface GenerationAttention {
+  key: string
+  count: number
+  label: string
+  to: string
+}
+
+export interface EpisodeBudgetState {
+  max_retries_per_shot: number
+  max_cost: number | null
+  paused: boolean
+  cost_total: number
+  over_cost: boolean
+}
+
+export interface GenerationOverview {
+  paused: boolean
+  spend: number
+  requests: number
+  held: number
+  awaiting_input: number
+  by_kind: { kind: string; requests: number; spend: number }[]
+  providers: Record<string, string>
+  episodes: {
+    episode_id: string
+    episode_number: number
+    title: string
+    spend: number
+    requests: number
+    failed: number
+    open: number
+    budget: EpisodeBudgetState
+  }[]
 }
 
 export interface Pipeline {

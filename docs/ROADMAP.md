@@ -1,6 +1,6 @@
 # MovAI Roadmap
 
-Status as of 2026-10-30. MovAI turns a complete story into a consistent series: story understanding first, then references, snapshots, sound, video and a final export. Each phase builds on the one before it, and creators review by exception: the system flags only what it is unsure about.
+Status as of 2026-11-01. MovAI turns a complete story into a consistent series: story understanding first, then references, snapshots, sound, video and a final export. Each phase builds on the one before it, and creators review by exception: the system flags only what it is unsure about.
 
 ## Where we are
 
@@ -12,18 +12,22 @@ Done and merged:
 - Saved entities with aliases, quote mentions and relationships; reversible merges; hand edits and approvals kept across re-runs.
 - Entity review API and page, a cost estimate and call limit per run, one active analysis per series.
 
-Known gaps in what exists: the review page is untested in a browser; only a 2-chunk story has been run; fallback models, screenplay input and `dev.ps1` are untested; events are not saved to the database yet.
+Also merged since then: the whole story pipeline (timeline, continuity, master script, filler review, adaptations, episode plans and repair, scene and shot breakdown with verbatim dialogue, look sheets), a migration runner and the web UI for every step.
+
+Built on the generation branch, running only against mock providers (placeholder files, no cost): the style bible, an asset store, the image, video, voice and music provider interfaces, a request queue with dependencies, reference images with a drift check, keyframes per shot, voices and sound with subtitles, video clips per shot, the animatic, and draft and final renders with an ffmpeg media package, plus per-episode budgets and a series-wide pause. The pipeline page lists what needs a person across all stages.
+
+Known gaps in what exists: no real image, video or voice provider is connected; the drift check is a colour-only mock until a vision model is configured; the generation pages have been checked only through the API and a type check, not clicked through in a browser; the second judge model for filler is configured through `JUDGE_LLM_MODEL` and has not had its own vendor key; a long novel has not been run end to end; tests and CI were intentionally skipped.
 
 ## The end-to-end flow
 
 | Phase | Covers | Status |
 |---|---|---|
 | 1. Upload and process | Ingest, parse, chunk, embed | Done (long-story test pending) |
-| 2. Story understanding | Characters and entities, timeline, continuity, master script, duration, season and episode plans, scene and shot breakdown, dialogue | Entities done; rest pending |
-| 3. Look and references | Style bible, character images, costumes and artifacts, location references | Not started |
-| 4. Episode snapshots | One still per shot, regenerate and edit | Not started |
-| 5. Sound and low-res video | Voices, music, effects, subtitles, animatic, low-res clips | Not started |
-| 6. Final output | High-res video, assembly, final mix, export | Not started |
+| 2. Story understanding | Characters and entities, timeline, continuity, master script, duration, season and episode plans, scene and shot breakdown, dialogue | Done and merged; verified on two short stories |
+| 3. Look and references | Style bible, character images, costumes and artifacts, location references | Built with mock providers; needs a real image provider and a browser check |
+| 4. Episode snapshots | One still per shot, regenerate and edit | Built with mock providers (keyframes with continuity and review) |
+| 5. Sound and low-res video | Voices, music, effects, subtitles, animatic, low-res clips | Built with mock providers; voice consent recorded, real voices pending |
+| 6. Final output | High-res video, assembly, final mix, export | Built: trim, normalize, stitch, audio mix, soft subtitles, 1080p upscale and final export with ffmpeg; real clips pending |
 
 ## Milestones
 
@@ -116,4 +120,4 @@ Done when a real story goes from upload to approved episode plans and shot lists
 
 ## Next step
 
-Start M1 with the timeline stage on a new branch, then run one long story through everything built so far.
+Add a manual provider for development, on its own branch. Instead of calling an image or video API it leaves the request `awaiting_input`, shows the exact prompt and reference images in the UI, and takes the result through the existing upload endpoint (`POST /api/v1/generation-requests/{id}/result`), so a person generating in the Muse AI sandbox acts as the API. Muse limits to design around: no negative prompt, seed or camera controls (fold them into the prompt text); clips come out at about 10 seconds and cannot be set, so the media layer trims them to the shot length; 4 images per chat request and 6 videos per message, so group requests in those sizes. After that: click through every generation page in a browser, connect real providers, and run one long story end to end.
