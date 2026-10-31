@@ -1,0 +1,113 @@
+.kf-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kf-tab {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.kf-tab[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.kf-tab small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.kf-scene {
+  display: grid;
+  gap: 10px;
+}
+.kf-grid {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.kf-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.kf-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 8px;
+}
+.kf-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.kf-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.kf-prompt {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  font: 12px/1.5 var(--font-mono);
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+.kf-refs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kf-ref {
+  display: grid;
+  gap: 4px;
+  width: 84px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kf-ref img {
+  width: 84px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.kf-detail {
+  display: grid;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.kf-note {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}

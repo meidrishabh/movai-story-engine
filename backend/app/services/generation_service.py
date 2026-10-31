@@ -122,7 +122,11 @@ def _references(db: Session, row) -> tuple[ReferenceImage | None, tuple[Referenc
         asset = get_asset(db, asset_id)
         if asset is None or asset["kind"] != "image":
             continue  # a deleted or non-image reference is skipped rather than failing the whole request
-        image = ReferenceImage(data=storage.read(asset["storage_key"]), mime_type=asset["mime_type"],
+        try:
+            data = storage.read(asset["storage_key"])
+        except FileNotFoundError:
+            continue  # the file is gone from storage (moved or cleaned up); skip it like a deleted reference
+        image = ReferenceImage(data=data, mime_type=asset["mime_type"],
                                role="first_frame" if str(asset_id) == first_id else "reference", asset_id=str(asset_id))
         if image.role == "first_frame":
             first = image
@@ -167,6 +171,10 @@ def _generate(db: Session, row) -> GeneratedMedia:
     raise PermanentJobError(f"Unknown media type '{media}'")
 
 
+def kind_is_image(row) -> bool:
+    return row["media_type"] == "image"
+
+
 def _finish(db: Session, row, data: bytes, mime_type: str, *, provider: str, model: str, cost: float = 0.0,
             width=None, height=None, duration_seconds=None, filename=None, metadata=None) -> dict:
     asset = save_asset(db, data, mime_type, series_id=row["series_id"], provider=provider, model=model,
@@ -177,6 +185,12 @@ def _finish(db: Session, row, data: bytes, mime_type: str, *, provider: str, mod
                        error_summary = NULL, completed_at = now() WHERE id = :r RETURNING *"""),
         {"a": str(asset["id"]), "p": provider, "c": cost, "r": str(row["id"])}).mappings().one()
     released = release_dependents(db, row["id"])
+    if row["kind"] == "keyframe" and kind_is_image(row):  # consistency check against the references it was made from
+        from app.services import keyframe_service  # lazy: keyframe_service imports this module
+        try:
+            keyframe_service.after_generated(db, row["id"])
+        except Exception:  # noqa: BLE001 - the check is advisory and must never fail the request
+            pass
     return {"request_id": str(row["id"]), "asset_id": str(asset["id"]), "cost": cost, "released": released,
             "status": updated["status"]}
 
@@ -194,6 +208,9 @@ def run_request(db: Session, request_id: UUID) -> dict:
         {"r": str(request_id)})
     db.commit()
     try:
+        if row["kind"] == "keyframe":  # re-collect the approved references and the previous shot just before running
+            from app.services import keyframe_service  # lazy: keyframe_service imports this module
+            row = keyframe_service.before_run(db, row)
         media = _generate(db, row)
     except MediaPending:
         db.execute(text("UPDATE generation_requests SET status = 'awaiting_input' WHERE id = :r"), {"r": str(request_id)})
