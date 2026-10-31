@@ -57,7 +57,7 @@ export function useKeyframeActions(seriesId: string, episodeId: string) {
     onSuccess: refresh,
   })
   const check = useMutation({
-    mutationFn: (requestId: string) => api.post(`/generation-requests/${requestId}/check`),
+    mutationFn: (requestId: string) => api.post(`/generation-requests/${requestId}/consistency-check`),
     onSuccess: refresh,
   })
   return { generate, regenerate, review, retry, check }

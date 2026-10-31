@@ -1,11 +1,10 @@
 """Consistency check for a generated image against the approved references it was made from.
 
-The check itself (a vision-model judge) belongs to the reference-image stage. This module is the hook: a judge is a
-callable `judge(db, request_row) -> {"score": float | None, "flagged": bool, "notes": str}`. Register one with
-`register_judge`, or merge a module the hook already looks for. With no judge the check is recorded as "skipped",
-which never blocks the pipeline. The outcome is stored in `generation_requests.checks`.
+The judge is the reference stage's `judge_against_references(db, request_row) -> {"score", "flagged", "notes"}`,
+so keyframes and reference images use the same model and threshold (`CONSISTENCY_JUDGE`, `CONSISTENCY_THRESHOLD`).
+A different judge can be set with `register_judge`. A missing or failing judge is recorded as "skipped" and never
+blocks the pipeline. The outcome is stored in `generation_requests.checks`.
 """
-import importlib
 import json
 import logging
 from collections.abc import Callable
@@ -17,13 +16,10 @@ from sqlalchemy.orm import Session
 log = logging.getLogger("consistency_check")
 
 _judge: Callable | None = None
-# (module, function) pairs the looks stage may provide; the first importable one is used.
-_CANDIDATES = (("app.services.consistency_service", "judge_against_references"),
-               ("app.services.reference_service", "judge_against_references"),
-               ("app.services.reference_judge", "judge"))
 
 
 def register_judge(judge: Callable | None) -> None:
+    """Override the judge (None restores the default, `reference_service.judge_against_references`)."""
     global _judge
     _judge = judge
 
@@ -31,14 +27,8 @@ def register_judge(judge: Callable | None) -> None:
 def _find_judge() -> Callable | None:
     if _judge is not None:
         return _judge
-    for module_name, function_name in _CANDIDATES:
-        try:
-            function = getattr(importlib.import_module(module_name), function_name, None)
-        except ImportError:
-            continue
-        if callable(function):
-            return function
-    return None
+    from app.services.reference_service import judge_against_references  # lazy: reference_service imports generation_service
+    return judge_against_references
 
 
 def run_check(db: Session, request_id: UUID) -> dict:
