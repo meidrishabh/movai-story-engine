@@ -15,6 +15,7 @@ const STEPS = [
   { to: 'breakdown', label: 'Episode breakdown', ready: true },
   { to: 'style', label: 'Style bible', ready: true },
   { to: 'references', label: 'Reference images', ready: true },
+  { to: 'video', label: 'Video', ready: true },
 ] as const
 
 export function SeriesLayout() {

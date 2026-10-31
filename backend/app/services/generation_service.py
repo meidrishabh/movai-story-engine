@@ -198,6 +198,13 @@ def run_request(db: Session, request_id: UUID) -> dict:
         raise PermanentJobError(f"Generation request {request_id} no longer exists")
     if row["status"] not in ("queued", "running"):
         return {"request_id": str(request_id), "skipped": row["status"]}  # finished, rejected or filled in by hand
+    from app.services.video_service import hold_reason  # imported here: video_service imports this module
+    held = hold_reason(db, row)  # a paused episode, or one over its cost cap, keeps its clips waiting
+    if held:
+        db.execute(text("UPDATE generation_requests SET status = 'blocked', params = params || CAST(:p AS jsonb) WHERE id = :r"),
+                   {"r": str(request_id), "p": json.dumps({"held_reason": held})})
+        db.commit()
+        return {"request_id": str(request_id), "status": "blocked", "held": held}
     db.execute(
         text("""UPDATE generation_requests SET status = 'running', attempt_count = attempt_count + 1,
                        started_at = COALESCE(started_at, now()), error_summary = NULL WHERE id = :r"""),
@@ -213,6 +220,11 @@ def run_request(db: Session, request_id: UUID) -> dict:
                      width=media.width, height=media.height, duration_seconds=media.duration_seconds,
                      metadata=media.metadata)
     db.commit()
+    from app.services.video_service import on_request_finished
+    try:
+        on_request_finished(db, request_id)  # measures a new video clip's real length
+    except Exception:  # noqa: BLE001 - measuring is a convenience; the clip is saved either way
+        db.rollback()
     return result
 
 

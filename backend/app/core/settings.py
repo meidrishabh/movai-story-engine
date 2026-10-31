@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     media_video_height: int = 720
     media_video_fps: int = 24
     media_video_crf: int = 20
+    # Low-res working profile for clip requests, the animatic and draft renders; the final export uses the profile
+    # above and is then upscaled to final_export_height.
+    render_working_width: int = 640
+    render_working_height: int = 360
+    render_working_fps: int = 24
+    render_working_crf: int = 28
+    final_export_height: int = 1080
+    # A clip within this many seconds of the shot length counts as exact.
+    clip_duration_tolerance: float = 0.15
 
     # Media generation. Each provider is looked up by name in app/providers/media_factory.py; "mock" writes placeholder files.
     image_provider: str = "mock"

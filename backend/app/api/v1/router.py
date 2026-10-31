@@ -18,6 +18,7 @@ from app.api.v1.uploads import router as uploads_router
 from app.api.v1.story import router as story_router
 from app.api.v1.structure import router as structure_router
 from app.api.v1.style import router as style_router
+from app.api.v1.video import router as video_router
 
 
 router = APIRouter()
@@ -39,3 +40,4 @@ router.include_router(structure_router)
 router.include_router(generation_router)
 router.include_router(style_router)
 router.include_router(references_router)
+router.include_router(video_router)
