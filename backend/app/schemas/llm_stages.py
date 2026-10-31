@@ -274,3 +274,33 @@ class StyleBibleResult(_Loose):
     negative_style: str | None = None
     per_act_overrides: list[StyleOverrideOut] = Field(default_factory=list)
     rationale: str | None = None
+
+
+# ----- sound design ----------------------------------------------------------
+
+class SoundEffectOut(_Loose):
+    shot: int | None = None  # 1-based shot number inside the scene
+    prompt: str = Field(min_length=1)
+    at_seconds: float | None = None  # seconds after the start of that shot
+
+
+class NarrationOut(_Loose):
+    shot: int | None = None
+    text: str = Field(min_length=1)
+
+
+class MusicCueOut(_Loose):
+    mood: str | None = None
+    continues: bool = False  # true: keep the previous scene's music running
+
+
+class SoundSceneOut(_Loose):
+    scene: int
+    ambience: str | None = None
+    music: MusicCueOut | None = None
+    sfx: list[SoundEffectOut] = Field(default_factory=list)
+    narration: list[NarrationOut] = Field(default_factory=list)
+
+
+class SoundDesignResult(_Loose):
+    scenes: list[SoundSceneOut] = Field(default_factory=list)

@@ -14,6 +14,8 @@ const STEPS = [
   { to: 'plans', label: 'Episode plans', ready: true },
   { to: 'breakdown', label: 'Episode breakdown', ready: true },
   { to: 'style', label: 'Style bible', ready: true },
+  { to: 'voices', label: 'Voices', ready: true },
+  { to: 'sound', label: 'Sound', ready: true },
 ] as const
 
 export function SeriesLayout() {
