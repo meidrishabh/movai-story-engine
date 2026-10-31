@@ -19,7 +19,33 @@ from app.services.metrics import record_metric
 from app.services.story_analysis_service import detect_story_format
 
 STAGE = "scene_breakdown"
+PART_SECONDS = 240  # a unit longer than this is written in parts of a few beats each; one reply cannot hold 100+ shots
+MAX_STRETCH = 1.6  # longest hold a shot may be stretched to when the model still under-writes after a retry
 MIN_COVERAGE = 0.8  # a unit whose shots add up to less than this share of its screen time gets one more try
+
+
+def _stretch(result: SceneBreakdownResult, needed: float) -> None:
+    """When a unit is still short after the retry, hold every shot a little longer instead of leaving a gap in the
+    episode's screen time. Capped, so a badly short answer stays visibly short rather than becoming slow motion."""
+    covered = _shot_seconds(result)
+    if not needed or not covered or covered >= MIN_COVERAGE * needed:
+        return
+    factor = min(MAX_STRETCH, 0.9 * needed / covered)
+    for scene in result.scenes:
+        for shot in scene.shots:
+            if shot.duration_seconds:
+                shot.duration_seconds = round(shot.duration_seconds * factor, 1)
+
+
+def _parts(beats: list[str], seconds: int) -> list[tuple[dict | None, list[str], int]]:
+    """Split a long unit into parts of consecutive beats, each worth about PART_SECONDS of screen time."""
+    count = max(1, min(len(beats), -(-seconds // PART_SECONDS)))
+    if count == 1:
+        return [(None, beats, seconds)]
+    size = -(-len(beats) // count)
+    groups = [beats[i:i + size] for i in range(0, len(beats), size)]
+    return [({"index": n, "of": len(groups)}, group, round(seconds * len(group) / len(beats)))
+            for n, group in enumerate(groups, start=1)]
 
 
 def _shot_seconds(result: SceneBreakdownResult) -> float:
@@ -63,34 +89,38 @@ def build_scene_breakdown(db: Session, episode_id: UUID, client: LLMStageClient 
             if words > settings.analysis_batch_words * 2 and kept:
                 break
             kept.append(chunk)
-        request = LLMAnalysisRequest(
-            task="scene_breakdown", profile=str(run["profile"]), context_chunks=kept, known_entities={},
-            story_format=story_format,
-            task_input={
-                "episode": {"title": episode["title"], "synopsis": episode["synopsis"],
-                            "target_seconds": unit["estimated_seconds"],
-                            "bridge_notes": episode["continuity_notes"] or {}},
-                "units": [{"number": unit["sequence_number"], "title": unit["title"], "synopsis": unit["synopsis"],
-                           "beats": (unit["content"] or {}).get("beats", []), "seconds": unit["estimated_seconds"]}],
-                "omit": [b["beat_text"] for b in removed if b["unit"] == unit["sequence_number"]],
-                **names},
-        )
-        # The key includes a hash of the input, so a changed cut or new bridge notes never reuse an old reply.
-        digest = hashlib.sha1(json.dumps(request.task_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
-        result: SceneBreakdownResult = client.run(
-            db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{digest}", request,
-            SceneBreakdownResult, [c["chunk_id"] for c in kept])
-        needed, covered = unit["estimated_seconds"] or 0, _shot_seconds(result)
-        if needed and covered < MIN_COVERAGE * needed:  # the model under-wrote this unit; ask once more, keep the better
-            retry_input = {**request.task_input, "previous_attempt": {"covered_seconds": round(covered),
-                                                                         "needed_seconds": needed}}
-            retry_digest = hashlib.sha1(json.dumps(retry_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
-            retry = client.run(db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{retry_digest}",
-                               replace(request, task_input=retry_input), SceneBreakdownResult,
-                               [c["chunk_id"] for c in kept])
-            if _shot_seconds(retry) > covered:
-                result = retry
-        scenes.extend(result.scenes)
+        beats = (unit["content"] or {}).get("beats", [])
+        for part, part_beats, needed in _parts(beats, unit["estimated_seconds"] or 0):
+            request = LLMAnalysisRequest(
+                task="scene_breakdown", profile=str(run["profile"]), context_chunks=kept, known_entities={},
+                story_format=story_format,
+                task_input={
+                    "episode": {"title": episode["title"], "synopsis": episode["synopsis"],
+                                "target_seconds": unit["estimated_seconds"],
+                                "bridge_notes": episode["continuity_notes"] or {}},
+                    "units": [{"number": unit["sequence_number"], "title": unit["title"], "synopsis": unit["synopsis"],
+                               "beats": part_beats, "seconds": needed}],
+                    **({"part": part} if part else {}),
+                    "omit": [b["beat_text"] for b in removed if b["unit"] == unit["sequence_number"]],
+                    **names},
+            )
+            # The key includes a hash of the input, so a changed cut or new bridge notes never reuse an old reply.
+            digest = hashlib.sha1(json.dumps(request.task_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
+            result: SceneBreakdownResult = client.run(
+                db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{digest}", request,
+                SceneBreakdownResult, [c["chunk_id"] for c in kept])
+            covered = _shot_seconds(result)
+            if needed and covered < MIN_COVERAGE * needed:  # the model under-wrote this part; ask once more, keep the better
+                retry_input = {**request.task_input, "previous_attempt": {"covered_seconds": round(covered),
+                                                                             "needed_seconds": needed}}
+                retry_digest = hashlib.sha1(json.dumps(retry_input, sort_keys=True, default=str).encode()).hexdigest()[:10]
+                retry = client.run(db, run["id"], STAGE, f"episode:{episode_id}:unit:{unit['sequence_number']}:{retry_digest}",
+                                   replace(request, task_input=retry_input), SceneBreakdownResult,
+                                   [c["chunk_id"] for c in kept])
+                if _shot_seconds(retry) > covered:
+                    result = retry
+                _stretch(result, needed)
+            scenes.extend(result.scenes)
     if not scenes:
         raise PermanentJobError("The model returned no scenes for this episode")
 

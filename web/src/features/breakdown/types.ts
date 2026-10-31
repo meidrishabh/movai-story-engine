@@ -17,12 +17,18 @@ export interface Shot {
   duration_seconds: number | null
 }
 
+export interface DialogueLine {
+  character: string
+  line: string
+  delivery: string | null
+}
+
 export interface Scene {
   id: string
   scene_number: number
   title: string
   description: string | null
-  dialogue: string | null
+  dialogue: DialogueLine[] | null
   environment_notes: string | null
   shots: Shot[]
 }

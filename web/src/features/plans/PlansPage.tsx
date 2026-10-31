@@ -82,6 +82,8 @@ function groupBySeason(plans: EpisodePlan[]) {
 }
 
 function PlanCard({ plan, busy, onApprove, onReject }: { plan: EpisodePlan; busy: boolean; onApprove: () => void; onReject: (note: string) => void }) {
+  const [rejecting, setRejecting] = useState(false)
+  const [note, setNote] = useState('')
   return (
     <Card>
       <div className="row row-between">
@@ -104,9 +106,20 @@ function PlanCard({ plan, busy, onApprove, onReject }: { plan: EpisodePlan; busy
           <Button variant="primary" busy={busy} onClick={onApprove}>
             Approve
           </Button>
-          <Button variant="danger" disabled={busy} onClick={() => onReject('Rejected from the review screen')}>
+          <Button variant="danger" disabled={busy} onClick={() => setRejecting((v) => !v)}>
             Reject
           </Button>
+        </div>
+      )}
+      {rejecting && (
+        <div className="form">
+          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Why reject this plan" placeholder="What is wrong with this plan? (optional)" />
+          <div className="row">
+            <Button variant="danger" busy={busy} onClick={() => onReject(note.trim() || 'Rejected from the review screen')}>
+              Reject plan
+            </Button>
+            <Button variant="ghost" onClick={() => setRejecting(false)}>Cancel</Button>
+          </div>
         </div>
       )}
     </Card>

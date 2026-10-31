@@ -1,8 +1,11 @@
+import { Link } from 'react-router-dom'
+
 import { Badge, Card, Empty, ErrorNote, Loading, LinkButton, Notice, PageHeader, ProgressBar } from '../../shared/ui'
-import { formatDate } from '../../shared/lib/format'
+import { formatDate, plural } from '../../shared/lib/format'
 import { useSeriesId } from '../series/api'
 import { usePipeline } from './api'
 import { isRunActive, stageStates } from './stages'
+import type { Attention } from './types'
 
 export default function PipelinePage() {
   const seriesId = useSeriesId()
@@ -65,7 +68,30 @@ export default function PipelinePage() {
           Analysis finished. Review the adaptation and the episode plans before anything is approved.
         </Notice>
       )}
+      {run.status === 'succeeded' && <AttentionList attention={pipeline.data.attention} />}
       {active && <p className="muted">This page updates by itself. Long stories can take several minutes.</p>}
     </div>
+  )
+}
+
+function AttentionList({ attention }: { attention: Attention }) {
+  const items = [
+    { count: attention.disputed_beats, text: (n: number) => `${plural(n, 'beat')} the two reviewers disagreed on`, to: '../adaptation' },
+    { count: attention.open_conflicts, text: (n: number) => `${plural(n, 'continuity conflict')} to check`, to: '../structure' },
+    { count: attention.entities_to_review, text: (n: number) => `${plural(n, 'character, place or object')} marked for review`, to: '../characters' },
+    { count: attention.draft_plans, text: (n: number) => `${plural(n, 'episode plan')} waiting for approval`, to: '../plans' },
+  ].filter((item) => item.count > 0)
+  if (items.length === 0) return <Notice>Nothing needs your attention.</Notice>
+  return (
+    <Card>
+      <h2>Needs your attention</h2>
+      <ul className="event-list">
+        {items.map((item) => (
+          <li key={item.to}>
+            <Link to={item.to}>{item.text(item.count)}</Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }

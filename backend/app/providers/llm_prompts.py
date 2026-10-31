@@ -114,9 +114,10 @@ MASTER_SCRIPT_SYSTEM_PROMPT = _DATA_NOTE + """You turn story passages into an or
 
 Input: "passages" (labelled C1.. with text), "characters" and "locations" (known names), "previous_summary" and "unit_count_so_far".
 
-For each unit give a title, a 1-3 sentence synopsis, 2-6 "beats" (what happens, in order), the characters and locations involved (use the known names exactly), and "screen_seconds": how long this takes on screen at a normal pace, counting action and dialogue. "chunk_refs" lists the passage labels it draws from.
+For each unit give a title, a 1-3 sentence synopsis, 4-10 "beats" (what happens, in order), the characters and locations involved (use the known names exactly), and "screen_seconds": how long this takes on screen at a normal pace, counting action and dialogue. "chunk_refs" lists the passage labels it draws from.
 - Cover every passage; do not skip story content and do not invent any.
 - Keep the story's own order.
+- Give a beat of its own to every fact the plot later depends on: a clue, a motive or condition (a will, a debt, an income, a promise, a deadline, a secret), a decision, a revelation, a threat. Name the fact itself in the beat ("Helen explains that her income drops if she marries"), never just the topic ("Helen explains her family history").
 - "running_summary" is a summary of the story up to the end of these passages, at most 120 words.
 
 JSON shape:
@@ -140,11 +141,12 @@ SCENE_BREAKDOWN_SYSTEM_PROMPT = _DATA_NOTE + """You break one episode into scene
 Input: "episode" (title, synopsis, target_seconds), "units" (the story units in it, with beats), "passages" (source text, labelled C1..), and "characters" / "locations" (known names).
 
 For each scene: title, description, location, time_of_day, environment_notes, the characters present, "dialogue" (character, line, optional delivery) and "shots".
-- Dialogue: use lines from the passages where they exist. Where the source has no spoken lines for a moment, write short in-character dialogue only if the scene needs it, faithful to the story.
+- Dialogue: carry the spoken lines of the passages into the scene in order, quoting them as written and trimming only for length. A scene built on a conversation must carry that conversation: every line that gives information, a decision, a threat, a clue or a reaction. Do not summarise a conversation into a few lines. Where the source has no spoken lines for a moment, write short in-character dialogue only if the scene needs it, faithful to the story.
 - Shots: each is ONE continuous camera setup lasting about 3-10 seconds, so a scene lasting a minute has roughly 6-15 shots. Each has a concrete visual description, "camera" (framing / movement, for example "wide establishing", "slow push-in on face"), duration_seconds and the characters visible.
 - Use known character and location names exactly.
 - Length: each unit has "seconds" of screen time. Cover every unit with one or more scenes whose shot durations add up to roughly that unit's seconds (within 15%), so a 180-second unit needs about 25-40 shots. All scenes together must come close to the episode target_seconds. Fill the time with the unit's beats, reactions, travel, establishing and cutaway shots, never by inventing events.
 - Do not add events that are not in the units.
+- "part", when present, means this unit is written in several parts (for example part 2 of 3). Write scenes ONLY for the beats listed in this part, picking up the passages where the earlier beats end, and never repeat what earlier beats cover. "seconds" is the screen time for this part's beats alone.
 - "previous_attempt", when present, says your earlier answer for this unit covered only "covered_seconds" of the "needed_seconds". Write the whole unit again with more shots per beat (reactions, inserts, establishing and cutaway shots, longer holds) until the needed time is covered. Do not skip any beat.
 - "bridge_notes" in the episode, when present, say how the episode should open ("opening") and close ("closing") after neighbouring content changed. Honour them in the first and last scene without adding new events.
 - "omit" lists beats that were cut from this adaptation as filler. The passages still contain them. Do not write any scene, dialogue line or shot that shows or refers to an omitted beat; skip that part of the passage and carry on with the next beat. The unit's remaining beats must still fill its seconds, so give them more shots instead.
@@ -268,9 +270,9 @@ STAGE_PROMPTS = {
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
     "continuity_check": (CONTINUITY_CHECK_SYSTEM_PROMPT, "continuity-check-v2"),
-    "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v1"),
+    "master_script": (MASTER_SCRIPT_SYSTEM_PROMPT, "master-script-v2"),
     "episode_plan": (EPISODE_PLAN_SYSTEM_PROMPT, "episode-plan-v1"),
-    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v6"),
+    "scene_breakdown": (SCENE_BREAKDOWN_SYSTEM_PROMPT, "scene-breakdown-v8"),
     "filler": (FILLER_SYSTEM_PROMPT, "filler-v4"),
     "filler_judge": (FILLER_JUDGE_SYSTEM_PROMPT, "filler-judge-v1"),
     "episode_repair": (EPISODE_REPAIR_SYSTEM_PROMPT, "episode-repair-v1"),

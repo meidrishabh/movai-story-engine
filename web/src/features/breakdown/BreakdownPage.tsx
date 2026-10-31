@@ -94,7 +94,16 @@ function Scenes({ episodeId }: { episodeId: string }) {
             {scene.scene_number}. {scene.title}
           </strong>
           {scene.description && <p className="muted">{scene.description}</p>}
-          {scene.dialogue && <p className="scene-dialogue">{scene.dialogue}</p>}
+          {scene.dialogue && scene.dialogue.length > 0 && (
+            <div className="scene-dialogue">
+              {scene.dialogue.map((line, index) => (
+                <p key={index}>
+                  <strong>{line.character}</strong>
+                  {line.delivery && <span className="muted"> ({line.delivery})</span>}: {line.line}
+                </p>
+              ))}
+            </div>
+          )}
           <ol className="event-list">
             {scene.shots.map((shot) => (
               <li key={shot.shot_number}>

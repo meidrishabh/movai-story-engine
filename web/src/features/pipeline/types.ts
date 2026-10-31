@@ -13,7 +13,16 @@ export interface AnalysisRun {
   completed_at: string | null
 }
 
+/** What the pipeline finished but wants a person to look at. */
+export interface Attention {
+  entities_to_review: number
+  open_conflicts: number
+  disputed_beats: number
+  draft_plans: number
+}
+
 export interface Pipeline {
+  attention: Attention
   series: Series
   source: SourceInfo | null
   master_script: { id: string; version_number: number; summary: string | null } | null

@@ -356,8 +356,11 @@
   gap: 6px;
 }
 .scene-dialogue {
-  white-space: pre-wrap;
-  font-style: italic;
+  display: grid;
+  gap: 4px;
+}
+.scene-dialogue p {
+  margin: 0;
 }
 
 /* ----- character look ----- */

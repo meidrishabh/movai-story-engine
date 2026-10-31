@@ -61,6 +61,7 @@ export default function AdaptationPage() {
         </Notice>
       )}
       {decide.isSuccess && decide.data.affected_episodes.length === 0 && <Notice>Saved.</Notice>}
+      {decide.isSuccess && decide.data.replan_job && <Notice tone="warn">Your draft episode plans are being rebuilt from the new cut.</Notice>}
 
       <Section title="Removed as filler" count={removed.length} empty="Nothing was removed.">
         {removed.map((item) => (
