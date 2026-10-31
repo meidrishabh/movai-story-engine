@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     video_provider: str = "mock"
     voice_provider: str = "mock"
     music_provider: str = "mock"
+    # Consistency judge for reference images: "mock" (colour comparison, placeholder only), "llm_vision" (an
+    # OpenAI-style model that accepts images; uses JUDGE_LLM_* then LLM_*), or "none" (skip the check).
+    consistency_judge: str = "mock"
+    consistency_threshold: float = 0.7  # a score below this is flagged as drift
     # Where generated and uploaded files are kept; relative paths are resolved from the backend folder.
     storage_dir: str = "storage"
 

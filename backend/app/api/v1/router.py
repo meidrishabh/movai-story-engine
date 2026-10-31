@@ -8,6 +8,7 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.characters import router as characters_router
 from app.api.v1.entities import router as entities_router
 from app.api.v1.generation import router as generation_router
+from app.api.v1.references import router as references_router
 from app.api.v1.seasons import router as seasons_router
 from app.api.v1.season_story import router as season_story_router
 from app.api.v1.system import router as system_router
@@ -37,3 +38,4 @@ router.include_router(story_router)
 router.include_router(structure_router)
 router.include_router(generation_router)
 router.include_router(style_router)
+router.include_router(references_router)
