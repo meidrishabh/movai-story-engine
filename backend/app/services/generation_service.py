@@ -118,7 +118,14 @@ def _references(db: Session, row) -> tuple[ReferenceImage | None, tuple[Referenc
     first_id = str((row["params"] or {}).get("first_frame_asset_id") or "")
     first, others = None, []
     storage = get_storage()
-    for asset_id in row["reference_asset_ids"] or []:
+    asset_ids = list(row["reference_asset_ids"] or [])
+    if (row["params"] or {}).get("use_dependency_results"):
+        # The images of the requests this one waited for; known only now, not when the request was created.
+        asset_ids += [r[0] for r in db.execute(
+            text("""SELECT result_asset_id FROM generation_requests WHERE id = ANY(CAST(:d AS uuid[]))
+                    AND result_asset_id IS NOT NULL"""),
+            {"d": "{" + ",".join(str(d) for d in row["depends_on"] or []) + "}"})]
+    for asset_id in dict.fromkeys(asset_ids):
         asset = get_asset(db, asset_id)
         if asset is None or asset["kind"] != "image":
             continue  # a deleted or non-image reference is skipped rather than failing the whole request
@@ -177,6 +184,9 @@ def _finish(db: Session, row, data: bytes, mime_type: str, *, provider: str, mod
                        error_summary = NULL, completed_at = now() WHERE id = :r RETURNING *"""),
         {"a": str(asset["id"]), "p": provider, "c": cost, "r": str(row["id"])}).mappings().one()
     released = release_dependents(db, row["id"])
+    if row["kind"] in ("style_anchor", "character_image", "place_image", "object_image"):
+        from app.services.reference_service import check_drift  # lazy: reference_service imports this module
+        check_drift(db, row["id"])  # never raises; a failed check is recorded on the request
     return {"request_id": str(row["id"]), "asset_id": str(asset["id"]), "cost": cost, "released": released,
             "status": updated["status"]}
 
