@@ -13,6 +13,7 @@ const STEPS = [
   { to: 'adaptation', label: 'Adaptation', ready: true },
   { to: 'plans', label: 'Episode plans', ready: true },
   { to: 'breakdown', label: 'Episode breakdown', ready: true },
+  { to: 'style', label: 'Style bible', ready: true },
 ] as const
 
 export function SeriesLayout() {

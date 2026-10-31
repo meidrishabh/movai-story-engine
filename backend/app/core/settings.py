@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     # Words of story text sent per extraction call.
     analysis_batch_words: int = 6000
 
+    # Media generation. Each provider is looked up by name in app/providers/media_factory.py; "mock" writes placeholder files.
+    image_provider: str = "mock"
+    video_provider: str = "mock"
+    voice_provider: str = "mock"
+    music_provider: str = "mock"
+    # Where generated and uploaded files are kept; relative paths are resolved from the backend folder.
+    storage_dir: str = "storage"
+
     # Comma-separated browser origins allowed to call the API (the separate UI app).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
