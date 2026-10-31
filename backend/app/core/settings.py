@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     media_video_fps: int = 24
     media_video_crf: int = 20
 
+    # Media generation. Each provider is looked up by name in app/providers/media_factory.py; "mock" writes placeholder files.
+    image_provider: str = "mock"
+    video_provider: str = "mock"
+    voice_provider: str = "mock"
+    music_provider: str = "mock"
+    # Where generated and uploaded files are kept; relative paths are resolved from the backend folder.
+    storage_dir: str = "storage"
+
     # Comma-separated browser origins allowed to call the API (the separate UI app).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

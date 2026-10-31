@@ -93,7 +93,18 @@ def _mock_look(request: LLMAnalysisRequest) -> dict:
     return {}
 
 
+def _mock_style_bible(request: LLMAnalysisRequest) -> dict:
+    series = request.task_input.get("series", {})
+    hint = series.get("visual_style_hint") or ""
+    return {"theme_tone": f"Mock mood for {series.get('title', 'the story')}", "medium": hint or "2D hand-drawn animation",
+            "art_style": "Soft ink lines, painted backgrounds, gentle texture", "palette": "muted blues and greys, one warm accent",
+            "lighting": "soft key light with long shadows", "camera_language": "wide establishing shots, slow pans",
+            "negative_style": "no text, no watermark, no photorealistic faces", "per_act_overrides": [],
+            "rationale": "Mock style for offline runs."}
+
+
 _STAGE_MOCKS = {
+    "style_bible": _mock_style_bible,
     "place_look": _mock_look, "object_look": _mock_look,
     "appearance": _mock_appearance,
     "filler": _mock_filler, "filler_judge": _mock_filler_judge, "episode_repair": _mock_episode_repair,

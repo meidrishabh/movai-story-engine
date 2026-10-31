@@ -249,3 +249,28 @@ class LookResult(_Loose):
     distinctive_features: str | None = None
     color_palette: list[str] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
+
+
+class StyleOverrideOut(_Loose):
+    when: str | None = None
+    change: str | None = None
+
+
+class StyleBibleResult(_Loose):
+    """The look of a whole series: one medium and art style, a palette, lighting and camera habits."""
+
+    @field_validator("theme_tone", "medium", "art_style", "palette", "lighting", "camera_language", "negative_style",
+                     "rationale", mode="before")
+    @classmethod
+    def _join_lists(cls, value):
+        return ", ".join(str(v) for v in value if v) or None if isinstance(value, list) else value
+
+    theme_tone: str | None = None
+    medium: str | None = None
+    art_style: str | None = None
+    palette: str | None = None
+    lighting: str | None = None
+    camera_language: str | None = None
+    negative_style: str | None = None
+    per_act_overrides: list[StyleOverrideOut] = Field(default_factory=list)
+    rationale: str | None = None

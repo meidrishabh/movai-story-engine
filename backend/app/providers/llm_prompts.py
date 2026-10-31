@@ -266,7 +266,29 @@ Rules:
 JSON shape:
 {"description": null, "form": null, "atmosphere": null, "distinctive_features": null, "color_palette": [], "evidence": []}"""
 
+STYLE_BIBLE_SYSTEM_PROMPT = _DATA_NOTE + """You are the art director of an animated adaptation of a story. You set ONE visual style for the whole series, so every image and video clip made for it looks like the same film.
+
+Input: "series" (title, genre, premise, and "visual_style_hint": what the creator asked for, may be empty), "summary", "units" (story parts: title, synopsis), "characters" and "places" (name, short description).
+
+Rules:
+- If "visual_style_hint" is given, follow it; fill the other fields to match it. Otherwise choose a style that suits the genre, era and mood of this story.
+- "medium": ONE choice, for example "2D hand-drawn animation", "cel-shaded anime", "3D stylised animation", "live-action cinematic". Never mix media.
+- "art_style": line quality, texture, level of detail and one or two named reference looks, in terms an image model understands. Under 50 words.
+- "palette": the main colours and one accent, as plain colour words, and the overall grade (for example "desaturated and cool, warm skin tones").
+- "lighting": the lighting approach (for example "hard single-source light, deep shadows").
+- "camera_language": lens and framing habits (for example "wide establishing shots, slow pans, shallow depth of field for close-ups").
+- "theme_tone": the story's themes and mood in one sentence, so the look supports them.
+- "negative_style": a short list of what the images must avoid (for example "no text, no watermark, no photorealistic faces, no modern objects").
+- "per_act_overrides": deliberate exceptions only when the story calls for them (a flashback, archival footage, a dream), each {"when": where in the story, "change": what changes about the look}. Empty list when none.
+- Describe the look only. Do not describe individual characters or invent plot.
+- "rationale": one sentence on why this style fits.
+
+JSON shape:
+{"theme_tone": "", "medium": "", "art_style": "", "palette": "", "lighting": "", "camera_language": "", "negative_style": "",
+ "per_act_overrides": [{"when": "", "change": ""}], "rationale": ""}"""
+
 STAGE_PROMPTS = {
+    "style_bible": (STYLE_BIBLE_SYSTEM_PROMPT, "style-bible-v1"),
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),
     "continuity": (CONTINUITY_SYSTEM_PROMPT, "continuity-v5"),
     "continuity_check": (CONTINUITY_CHECK_SYSTEM_PROMPT, "continuity-check-v2"),

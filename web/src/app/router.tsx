@@ -15,6 +15,7 @@ const PlansPage = lazy(() => import('../features/plans/PlansPage'))
 const CharactersPage = lazy(() => import('../features/characters/CharactersPage'))
 const StructurePage = lazy(() => import('../features/structure/StructurePage'))
 const BreakdownPage = lazy(() => import('../features/breakdown/BreakdownPage'))
+const StylePage = lazy(() => import('../features/style/StylePage'))
 
 export function AppRoutes() {
   return (
@@ -31,6 +32,7 @@ export function AppRoutes() {
           <Route path="adaptation" element={<AdaptationPage />} />
           <Route path="plans" element={<PlansPage />} />
           <Route path="breakdown" element={<BreakdownPage />} />
+          <Route path="style" element={<StylePage />} />
           <Route path="*" element={<div className="page"><Empty title="Page not found">That step does not exist.</Empty></div>} />
         </Route>
         <Route path="*" element={<div className="page"><Empty title="Page not found">Check the address, or go back to the projects list.</Empty></div>} />
