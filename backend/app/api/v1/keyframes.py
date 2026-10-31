@@ -8,8 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.api.v1.entities import _series_owned
-from app.services import consistency_check, keyframe_service
+from app.api.v1.entities import _episode_series, _series_owned
+from app.services import keyframe_service
 from app.services.prompt_builder import build_video_prompt, load_shot_context
 from app.services.style_bible_service import get_approved
 
@@ -19,14 +19,6 @@ router = APIRouter(prefix="/api/v1", tags=["keyframes"])
 class GenerateKeyframes(BaseModel):
     shot_ids: list[UUID] | None = Field(default=None, description="Only these shots; default is every shot of the episode")
     regenerate: bool = Field(default=False, description="Make a fresh keyframe even where one exists")
-
-
-def _episode_series(db: Session, episode_id: UUID) -> UUID:
-    series_id = db.execute(text("SELECT series_id FROM episodes WHERE id = :e"), {"e": str(episode_id)}).scalar()
-    if series_id is None:
-        raise HTTPException(status_code=404, detail="Episode was not found")
-    _series_owned(db, series_id)
-    return series_id
 
 
 def _shot_series(db: Session, shot_id: UUID) -> UUID:
@@ -76,18 +68,6 @@ def regenerate_keyframe(shot_id: UUID, db: Session = Depends(get_db)):
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
-
-
-@router.post("/generation-requests/{request_id}/check")
-def check_consistency(request_id: UUID, db: Session = Depends(get_db)):
-    """Run (or re-run) the consistency check on a finished image against its references."""
-    series_id = db.execute(text("SELECT series_id FROM generation_requests WHERE id = :r"), {"r": str(request_id)}).scalar()
-    if series_id is None:
-        raise HTTPException(status_code=404, detail="Request was not found")
-    _series_owned(db, series_id)
-    result = consistency_check.run_check(db, request_id)
-    db.commit()
-    return result
 
 
 @router.get("/shots/{shot_id}/video-prompt")

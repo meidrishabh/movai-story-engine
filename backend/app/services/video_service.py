@@ -21,14 +21,13 @@ from app.media import ops
 from app.media.errors import MediaError
 from app.services import generation_service as generation
 from app.services import style_bible_service
-from app.services.asset_store import BACKEND_ROOT, asset_summary, get_asset, get_storage
+from app.services.asset_store import asset_summary, get_asset, get_storage, storage_root
 
 log = logging.getLogger("video")
 
 DEFAULT_SHOT_SECONDS = 5.0
 DEFAULT_MAX_RETRIES = 3
 LIVE_STATUSES = ("queued", "blocked", "running", "awaiting_input")
-NEGATIVE_BASE = "text, watermark, flicker, warping, morphing"
 
 
 def _ids(values) -> str:
@@ -37,8 +36,7 @@ def _ids(values) -> str:
 
 def work_root() -> Path:
     """Scratch space for renders, next to the asset files."""
-    root = getattr(get_storage(), "root", None) or (BACKEND_ROOT / settings.storage_dir)
-    return Path(root) / "_work"
+    return storage_root() / "_work"
 
 
 def local_file(asset: dict) -> Path:
@@ -210,7 +208,9 @@ def _episode_of_shot(db: Session, shot_id) -> str | None:
 
 
 def hold_reason(db: Session, row) -> str | None:
-    """Why a queued clip request must not run now: 'paused', 'budget', or None."""
+    """Why a queued request must not run now: 'series_paused' (any kind), or for a clip 'paused' / 'budget'; else None."""
+    if db.execute(text("SELECT paused FROM generation_controls WHERE series_id = :s"), {"s": str(row["series_id"])}).scalar():
+        return "series_paused"
     if row["kind"] != "video_clip":
         return None
     episode_id = (row["params"] or {}).get("episode_id") or (_episode_of_shot(db, row["target_id"]) if row["target_id"] else None)
@@ -244,42 +244,13 @@ def release_held(db: Session, episode_id: UUID) -> list[str]:
 
 # --- prompts and planning -----------------------------------------------------------------------------------------
 
-def _fallback_prompt(shot: dict, bible: dict | None) -> tuple[str, str]:
-    seconds = shot_seconds(shot)
-    camera = (shot.get("camera") or "").strip()
-    parts = []
-    if camera:
-        parts.append(f"Camera: {camera}.")
-    parts.append(str(shot["description"]).strip())
-    parts.append(f"Single continuous shot, {seconds:g} seconds, nothing happens after the described action.")
-    negative = NEGATIVE_BASE
-    if bible:
-        parts.append("Style: " + style_bible_service.style_block(bible, short=True))
-        extra = style_bible_service.negative_block(bible)
-        if extra:
-            negative = f"{extra}, {negative}"
-    return "\n".join(parts), negative
-
-
-def build_prompts(shot: dict, bible: dict | None) -> tuple[str, str]:
-    """The motion prompt and negative prompt for a shot. Uses the keyframe agent's builder when it is merged."""
-    try:
-        from app.services.prompt_builder import build_video_prompt  # type: ignore[attr-defined]
-    except ImportError:
-        build_video_prompt = None
-    if build_video_prompt is not None:
-        try:
-            built = build_video_prompt(shot, bible)
-            if isinstance(built, str):
-                return built, _fallback_prompt(shot, bible)[1]
-            if isinstance(built, dict):
-                return built["prompt"], built.get("negative_prompt") or _fallback_prompt(shot, bible)[1]
-            if isinstance(built, (tuple, list)) and built:
-                return built[0], (built[1] if len(built) > 1 and built[1] else _fallback_prompt(shot, bible)[1])
-        except Exception:  # noqa: BLE001 - a builder that rejects this shot must not stop the whole plan
-            log.warning("prompt_builder.build_video_prompt failed for shot %s; using the built-in prompt",
-                        shot.get("shot_id"), exc_info=True)
-    return _fallback_prompt(shot, bible)
+def build_prompts(db: Session, shot: dict, bible: dict | None) -> dict:
+    """The motion prompt for a shot: prompt_builder's `build_video_prompt` on the shot's full context. Returns its dict
+    ({"prompt", "negative_prompt", "sound_prompt", "duration_seconds", "aspect_ratio"})."""
+    from app.services.prompt_builder import build_video_prompt, load_shot_context  # imported here: builder imports services
+    context = load_shot_context(db, UUID(str(shot["shot_id"])))
+    context["duration_seconds"] = shot_seconds(shot)
+    return build_video_prompt(context, bible or {})
 
 
 def working_size() -> tuple[int, int]:
@@ -314,8 +285,10 @@ def plan_clips(db: Session, episode_id: UUID, *, limit: int | None = None, scene
         if keyframe is None and not allow_text_to_video:
             no_keyframe.append(key)
             continue
-        prompt, negative = build_prompts(shot, bible)
+        built = build_prompts(db, shot, bible)
+        prompt, negative = built["prompt"], built["negative_prompt"]
         params = {"duration_seconds": shot_seconds(shot), "width": width, "height": height,
+                  "aspect_ratio": built["aspect_ratio"], "sound_prompt": built["sound_prompt"] or None,
                   "fps": settings.render_working_fps, "episode_id": str(episode_id), "working_size": True,
                   "hold_last_frame": hold_last_frame}
         refs = []

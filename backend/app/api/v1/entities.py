@@ -42,6 +42,14 @@ def _series_owned(db: Session, series_id: UUID):
         raise HTTPException(status_code=404, detail="Series was not found")
 
 
+def _episode_series(db: Session, episode_id: UUID) -> UUID:
+    series_id = db.execute(text("SELECT series_id FROM episodes WHERE id = :e"), {"e": str(episode_id)}).scalar()
+    if series_id is None:
+        raise HTTPException(status_code=404, detail="Episode was not found")
+    _series_owned(db, series_id)
+    return series_id
+
+
 def _entity(db: Session, kind: str, entity_id: UUID) -> dict:
     row = db.execute(
         text(

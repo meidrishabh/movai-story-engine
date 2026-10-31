@@ -127,11 +127,8 @@ def create_render(db: Session, episode_id: UUID, kind: str) -> dict:
 # --- the render -----------------------------------------------------------------------------------------------------
 
 def _audio_plan(db: Session, episode_id: UUID) -> dict[str, dict]:
-    """Per shot: audio tracks and subtitles from the sound agent's plan, when that is merged; else none."""
-    try:
-        from app.services.sound_service import build_audio_plan  # type: ignore[attr-defined]
-    except ImportError:
-        return {}
+    """Per shot: audio tracks and subtitles from sound_service's audio plan, in the shape assemble_episode takes."""
+    from app.services.sound_service import build_audio_plan  # imported here: sound_service imports generation code
     try:
         plan = build_audio_plan(db, episode_id) or {}
     except Exception:  # noqa: BLE001 - a broken sound plan must not stop the picture

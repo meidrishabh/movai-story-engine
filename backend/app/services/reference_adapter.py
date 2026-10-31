@@ -1,14 +1,15 @@
 """Finds the approved reference images a keyframe should carry.
 
-This is a thin adapter over the generation_requests rows the reference-image stage produces: kind style_anchor,
-character_image, place_image or object_image, with target_id on the character_version / entity_look, review_status
-'approved' and result_asset_id set. It queries those rows directly. If `app.services.reference_service` is merged
-later, the three functions below are the only place to point at it.
+Approved references come from `app.services.reference_service` (one source of truth for which view of which target
+counts as current). This module adds what only a keyframe needs: the slot-by-slot packing under the image cap, and
+the pending references a keyframe should wait for.
 """
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.services import reference_service
 
 ROLE_KIND = {"character": "character_image", "place": "place_image", "object": "object_image"}
 PER_ENTITY = {"character": 2, "place": 1, "object": 1}  # e.g. front and three-quarter view of a character
@@ -16,10 +17,8 @@ PENDING_STATUSES = ("queued", "blocked", "running", "awaiting_input")
 
 
 def style_anchor(db: Session, series_id: UUID) -> UUID | None:
-    return db.execute(
-        text("""SELECT result_asset_id FROM generation_requests
-                WHERE series_id = :s AND kind = 'style_anchor' AND review_status = 'approved' AND result_asset_id IS NOT NULL
-                ORDER BY reviewed_at DESC NULLS LAST, created_at DESC LIMIT 1"""), {"s": str(series_id)}).scalar()
+    asset_id = reference_service.style_anchor_asset_id(db, series_id)
+    return UUID(str(asset_id)) if asset_id else None
 
 
 def _targets(slot: dict) -> list[str]:
@@ -27,15 +26,7 @@ def _targets(slot: dict) -> list[str]:
 
 
 def approved_assets(db: Session, series_id: UUID, role: str, targets: list[str], limit: int) -> list[UUID]:
-    if not targets:
-        return []
-    rows = db.execute(
-        text("""SELECT result_asset_id FROM generation_requests
-                WHERE series_id = :s AND kind = :k AND review_status = 'approved' AND result_asset_id IS NOT NULL
-                  AND target_id = ANY(CAST(:t AS uuid[]))
-                ORDER BY reviewed_at DESC NULLS LAST, created_at DESC LIMIT :n"""),
-        {"s": str(series_id), "k": ROLE_KIND[role], "t": "{" + ",".join(targets) + "}", "n": limit}).all()
-    return [r[0] for r in rows]
+    return [UUID(a) for a in reference_service.approved_asset_ids(db, series_id, role, targets, limit)]
 
 
 def pending_request(db: Session, series_id: UUID, role: str, targets: list[str]) -> UUID | None:

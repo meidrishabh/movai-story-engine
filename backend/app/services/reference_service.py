@@ -66,12 +66,17 @@ def _load(db: Session, asset_id, role: str) -> ReferenceImage | None:
     return ReferenceImage(data=data, mime_type=asset["mime_type"], role=role, asset_id=str(asset_id))
 
 
-def get_style_anchor(db: Session, series_id: UUID) -> ReferenceImage | None:
-    """The approved style anchor frame (role 'style'), or None."""
-    asset_id = db.execute(
+def style_anchor_asset_id(db: Session, series_id: UUID):
+    """The asset id of the approved style anchor frame, or None."""
+    return db.execute(
         text("""SELECT result_asset_id FROM generation_requests WHERE series_id = :s AND kind = 'style_anchor'
                 AND review_status = 'approved' AND result_asset_id IS NOT NULL
                 ORDER BY reviewed_at DESC NULLS LAST, created_at DESC LIMIT 1"""), {"s": str(series_id)}).scalar()
+
+
+def get_style_anchor(db: Session, series_id: UUID) -> ReferenceImage | None:
+    """The approved style anchor frame (role 'style'), or None."""
+    asset_id = style_anchor_asset_id(db, series_id)
     return _load(db, asset_id, "style") if asset_id else None
 
 
@@ -89,6 +94,43 @@ def _approved_rows(db: Session, kind: str, target_ids: list) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _look_ids(db: Session, series_id: UUID, ids) -> list:
+    """Entity ids (locations / continuity_objects) or entity_look ids -> entity_look ids."""
+    ids = [str(i) for i in ids if i]
+    if not ids:
+        return []
+    arr = "{" + ",".join(ids) + "}"
+    return [r[0] for r in db.execute(
+        text("""SELECT id FROM entity_looks WHERE series_id = :s
+                AND (id = ANY(CAST(:i AS uuid[])) OR entity_id = ANY(CAST(:i AS uuid[])))"""),
+        {"s": str(series_id), "i": arr})]
+
+
+def _best_asset_ids(db: Session, kind: str, targets: list, views: dict, max_per_target: int) -> list[str]:
+    """Asset ids of the newest approved view of each target, in view order, at most `max_per_target` per target."""
+    order = list(views)
+    by_target: dict[str, list[dict]] = {}
+    for row in _approved_rows(db, kind, targets):
+        if row["view"] is None or row["view"] in order:  # a request made by hand has no view; it ranks last
+            by_target.setdefault(str(row["target_id"]), []).append(row)
+    out: list[str] = []
+    for target_rows in by_target.values():
+        ranked = sorted(target_rows, key=lambda r: order.index(r["view"]) if r["view"] in order else len(order))
+        for row in ranked[:max_per_target]:
+            if str(row["result_asset_id"]) not in out:
+                out.append(str(row["result_asset_id"]))
+    return out
+
+
+def approved_asset_ids(db: Session, series_id: UUID, role: str, targets, limit: int = 2) -> list[str]:
+    """Approved reference asset ids for one slot of a shot (role 'character', 'place' or 'object'), front view first.
+    Characters are matched by character_version id; places and objects by entity id or entity_look id."""
+    if role == "character":
+        return _best_asset_ids(db, "character_image", [str(t) for t in targets if t], CHARACTER_VIEWS, limit)
+    kind, views = ("place_image", PLACE_VIEWS) if role == "place" else ("object_image", OBJECT_VIEWS)
+    return _best_asset_ids(db, kind, _look_ids(db, series_id, targets), views, limit)
+
+
 def get_approved_references(db: Session, series_id: UUID, character_version_ids=(), place_id: UUID | None = None,
                             object_ids=(), *, costume_ids=(), max_per_target: int = 2) -> list[ReferenceImage]:
     """Approved reference images for the things in a shot, ready to attach to a keyframe request.
@@ -98,34 +140,20 @@ def get_approved_references(db: Session, series_id: UUID, character_version_ids=
     expressions (places: establishing, other angle; objects: hero, detail). The style anchor is not included: ask
     for it with `get_style_anchor`.
     """
-    look_targets = [i for i in ([place_id] if place_id else []) + list(object_ids)]
-    if look_targets:
-        ids = "{" + ",".join(str(i) for i in look_targets) + "}"
-        look_ids = [r[0] for r in db.execute(
-            text("""SELECT id FROM entity_looks WHERE series_id = :s
-                    AND (id = ANY(CAST(:i AS uuid[])) OR entity_id = ANY(CAST(:i AS uuid[])))"""),
-            {"s": str(series_id), "i": ids})]
-    else:
-        look_ids = []
+    look_ids = _look_ids(db, series_id, ([place_id] if place_id else []) + list(object_ids))
     groups = [("character_image", list(character_version_ids), CHARACTER_VIEWS),
               ("character_image", list(costume_ids), COSTUME_VIEWS),
               ("place_image", look_ids, PLACE_VIEWS), ("object_image", look_ids, OBJECT_VIEWS)]
     out: list[ReferenceImage] = []
     seen: set[str] = set()
     for kind, targets, views in groups:
-        order = list(views)
-        by_target: dict[str, list[dict]] = {}
-        for row in _approved_rows(db, kind, targets):
-            if row["view"] in order:
-                by_target.setdefault(str(row["target_id"]), []).append(row)
-        for target_rows in by_target.values():
-            for row in sorted(target_rows, key=lambda r: order.index(r["view"]))[:max_per_target]:
-                if str(row["result_asset_id"]) in seen:
-                    continue
-                image = _load(db, row["result_asset_id"], "reference")
-                if image:
-                    seen.add(str(row["result_asset_id"]))
-                    out.append(image)
+        for asset_id in _best_asset_ids(db, kind, targets, views, max_per_target):
+            if asset_id in seen:
+                continue
+            image = _load(db, asset_id, "reference")
+            if image:
+                seen.add(asset_id)
+                out.append(image)
     return out
 
 
@@ -165,6 +193,20 @@ def check_drift(db: Session, request_id: UUID) -> dict | None:
     except Exception as error:  # noqa: BLE001 - recorded, never raised
         return _record(db, request_id, None, False, f"The check failed: {str(error)[:300]}", "error")
     return _record(db, request_id, result.score, result.drift, result.notes, result.judge)
+
+
+def judge_against_references(db: Session, row: dict) -> dict:
+    """Judge a finished image request (a keyframe) against the reference images it was made from. This is the judge
+    `consistency_check` runs; the verdict is {"score", "flagged", "notes"}."""
+    image = _load(db, row["result_asset_id"], "reference")
+    refs = [i for i in (_load(db, a, "reference") for a in (row["reference_asset_ids"] or [])) if i]
+    params = row["params"] or {}
+    shot = params.get("shot") or {}
+    subject = f"keyframe of shot {shot.get('shot_number', '')} in scene {shot.get('scene_number', '')}".replace("  ", " ")
+    if image is None:
+        return {"score": None, "flagged": False, "notes": "The image file is not available."}
+    result = judge_images(subject, image, refs)
+    return {"score": result.score, "flagged": result.drift, "notes": result.notes}
 
 
 def _record(db: Session, request_id, score, drift: bool, notes: str, judge: str) -> dict:

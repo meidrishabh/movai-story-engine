@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.v1.entities import _series_owned
+from app.services import consistency_check
 from app.services import generation_service as generation
 from app.services import reference_service as references
 
@@ -104,6 +105,10 @@ def run_consistency_check(request_id: UUID, db: Session = Depends(get_db)):
     if series_id is None:
         raise HTTPException(status_code=404, detail="Request was not found")
     _series_owned(db, series_id)
+    if db.execute(text("SELECT kind FROM generation_requests WHERE id = :r"), {"r": str(request_id)}).scalar() == "keyframe":
+        result = consistency_check.run_check(db, request_id)  # keyframes keep their verdict in `checks`
+        db.commit()
+        return {**result, "request": generation.get_request(db, request_id)}
     result = references.check_drift(db, request_id)
     if result is None:
         raise HTTPException(status_code=409, detail="The request has no image to check")

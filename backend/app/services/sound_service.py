@@ -24,7 +24,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.errors import PermanentJobError
-from app.core.settings import settings
 from app.media import probe, to_srt
 from app.media.runner import run as run_ffmpeg
 from app.providers.llm_base import LLMAnalysisRequest, LLMProviderError
@@ -32,7 +31,7 @@ from app.providers.llm_factory import get_llm_provider
 from app.schemas.llm_stages import SoundDesignResult
 from app.services import generation_service as generation
 from app.services import style_bible_service, voice_cast_service
-from app.services.asset_store import BACKEND_ROOT, asset_summary, delete_asset, get_asset, get_storage, save_asset
+from app.services.asset_store import asset_summary, delete_asset, get_asset, get_storage, save_asset, storage_root
 from app.services.llm_stage import LLMStageClient
 
 LEAD = 0.3  # silence before the first line of a shot
@@ -626,8 +625,7 @@ def episode_board(db: Session, episode_id: UUID) -> dict:
 # ----- the audio plan for the video step ---------------------------------------------------------------------------
 
 def _plan_dir(episode_id: UUID) -> Path:
-    root = Path(settings.storage_dir)
-    folder = (root if root.is_absolute() else BACKEND_ROOT / root) / "sound_plan" / str(episode_id)
+    folder = storage_root() / "sound_plan" / str(episode_id)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

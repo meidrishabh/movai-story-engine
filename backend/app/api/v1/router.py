@@ -20,6 +20,7 @@ from app.api.v1.structure import router as structure_router
 from app.api.v1.style import router as style_router
 from app.api.v1.video import router as video_router
 from app.api.v1.sound import router as sound_router
+from app.api.v1.generation_overview import router as generation_overview_router
 from app.api.v1.keyframes import router as keyframes_router
 
 
@@ -44,4 +45,5 @@ router.include_router(style_router)
 router.include_router(references_router)
 router.include_router(video_router)
 router.include_router(sound_router)
+router.include_router(generation_overview_router)
 router.include_router(keyframes_router)

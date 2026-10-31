@@ -63,9 +63,20 @@ class LocalAssetStorage:
         return self._path(key).exists()
 
 
-def get_storage() -> AssetStorage:
+def storage_root() -> Path:
+    """The folder asset files and scratch work live in. Always the same place for the API and the job runner of one
+    checkout: STORAGE_DIR, resolved from the backend folder when relative."""
     root = Path(settings.storage_dir)
-    return LocalAssetStorage(root if root.is_absolute() else BACKEND_ROOT / root)
+    return root if root.is_absolute() else BACKEND_ROOT / root
+
+
+def asset_url(asset_id) -> str:
+    """The API path that serves an asset's file."""
+    return f"/api/v1/assets/{asset_id}/file"
+
+
+def get_storage() -> AssetStorage:
+    return LocalAssetStorage(storage_root())
 
 
 def kind_for(mime_type: str) -> str:
@@ -143,5 +154,5 @@ def asset_summary(asset: dict | None) -> dict | None:
     return {"id": str(asset["id"]), "kind": asset["kind"], "mime_type": asset["mime_type"], "byte_size": asset["byte_size"],
             "width": asset["width"], "height": asset["height"],
             "duration_seconds": float(asset["duration_seconds"]) if asset["duration_seconds"] is not None else None,
-            "provider": asset["provider"], "url": f"/api/v1/assets/{asset['id']}/file",
+            "provider": asset["provider"], "url": asset_url(asset["id"]),
             "created_at": asset["created_at"]}

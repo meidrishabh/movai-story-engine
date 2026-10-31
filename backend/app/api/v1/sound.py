@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.api.v1.entities import _series_owned
+from app.api.v1.entities import _episode_series, _series_owned
 from app.services import sound_service as sound
 from app.services import voice_cast_service as casting
 
@@ -49,14 +49,6 @@ def _character_id(value: str) -> UUID | None:
         return UUID(value)
     except ValueError as error:
         raise HTTPException(status_code=422, detail="Use a character id or 'narrator'") from error
-
-
-def _episode_series(db: Session, episode_id: UUID) -> UUID:
-    series_id = db.execute(text("SELECT series_id FROM episodes WHERE id = :e"), {"e": str(episode_id)}).scalar()
-    if series_id is None:
-        raise HTTPException(status_code=404, detail="Episode was not found")
-    _series_owned(db, series_id)
-    return series_id
 
 
 # ----- voice casting ---------------------------------------------------------------------------------------------

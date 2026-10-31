@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services import generation_service as generation
+from app.services.asset_store import asset_url
 
 NARRATOR = "narrator"
 SAMPLE_TEXT = "This is how I sound. Does this voice fit the character?"
@@ -112,7 +113,7 @@ def list_cast(db: Session, series_id: UUID) -> dict:
                 "consent_given": cast["consent_given"], "consent_note": cast["consent_note"],
                 "preview": None if preview is None else {
                     "request_id": str(preview["id"]), "status": preview["status"], "error": preview["error_summary"],
-                    "url": f"/api/v1/assets/{asset['id']}/file" if asset else None}}
+                    "url": asset_url(asset["id"]) if asset else None}}
 
     items = []
     for c in characters:
