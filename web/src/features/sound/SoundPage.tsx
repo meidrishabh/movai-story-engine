@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Badge, Button, Card, Empty, ErrorNote, Loading, Notice, PageHeader } from '../../shared/ui'
 import { formatDuration, plural } from '../../shared/lib/format'
 import { useBreakdownOverview } from '../breakdown/api'
+import { ScenePicker } from '../scope/ScenePicker'
 import { useSeriesId } from '../series/api'
 import { audioUrl, useSoundActions, useSoundBoard, useSubtitles } from './api'
 import type { BoardScene, BoardShot, Cue, CueStatus, CueType, SoundBoard } from './types'
@@ -48,6 +49,7 @@ export default function SoundPage() {
 }
 
 function Board({ episodeId }: { episodeId: string }) {
+  const seriesId = useSeriesId()
   const query = useSoundBoard(episodeId)
   const actions = useSoundActions(episodeId)
   const [showSrt, setShowSrt] = useState(false)
@@ -62,6 +64,7 @@ function Board({ episodeId }: { episodeId: string }) {
 
   return (
     <div className="stack">
+      <ScenePicker seriesId={seriesId} episodeId={episodeId} />
       {errors && <ErrorNote error={errors.error} />}
       {board.job?.status === 'failed' && board.job.error_summary && <Notice tone="bad">Sound generation failed: {board.job.error_summary}</Notice>}
       {board.warnings.map((w) => <Notice key={w} tone="warn">{w}</Notice>)}

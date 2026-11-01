@@ -302,7 +302,24 @@ Rules:
 JSON shape:
 {"scenes": [{"scene": 1, "ambience": "", "music": {"mood": "", "continues": false}, "sfx": [{"shot": 1, "at_seconds": 0.5, "prompt": ""}], "narration": [{"shot": 1, "text": ""}]}]}"""
 
+PROMO_PLAN_SYSTEM_PROMPT = _DATA_NOTE + """You are the trailer editor of an animated adaptation. You cut a teaser or a trailer from shots the series already has.
+
+Input: "promo" (kind "teaser" or "trailer", "target_seconds", "title"), "series" (title, genre, premise, tone), "candidates": the shots you may use, each with "ref" (a number), "episode", "scene", "shot", "description", "camera", "seconds" (how long the shot is), "position" (0 to 1, where it falls in the whole story) and "ready" (true when its picture already exists).
+
+Rules:
+- Return "items" in playing order. Each item is {"type": "shot" | "title_card" | "narration", ...}. A "shot" has "ref" (a candidate number you were given), "seconds" (how much of it to play, at most its length, usually 1.5 to 4 seconds) and optionally "start_offset" (seconds into the shot, usually 0). A "title_card" has "text", optional "subtitle" and "seconds" (1.5 to 3). A "narration" has "text" (one short spoken line) and plays over the item before it.
+- The total of shot "seconds" plus title card "seconds" must be within 10 percent of "target_seconds". Narration does not count towards the total.
+- Open on a hook: the most striking or intriguing shot, not an establishing shot. Build with rising pace: shots get shorter towards the end. Close with a title card carrying the series title (and a line such as "Coming soon").
+- A teaser shows the premise and mood and never reveals the ending or any twist: use only candidates with "position" under 0.7. A trailer may use the whole story but still must not show the final resolution (position over 0.92).
+- Prefer candidates with "ready": true so less has to be made, but choose for story strength first. Spread the shots across different scenes; never use two neighbouring shots of one scene back to back unless it is a deliberate action beat.
+- Use a title card in the middle only when a trailer needs a beat (a question, a date, a tagline). A teaser has at most one card besides the closing one. Use narration sparingly: zero to three lines in a trailer, at most one in a teaser. Never narrate what the picture already says.
+- "hook": one sentence on what the promo promises. "music_mood": instruments, pace and feeling in under 20 words. "notes": one sentence on the arc you built.
+
+JSON shape:
+{"hook": "", "music_mood": "", "notes": "", "items": [{"type": "shot", "ref": 1, "seconds": 3.0, "start_offset": 0.0, "reason": ""}, {"type": "title_card", "text": "", "subtitle": "", "seconds": 2.0}, {"type": "narration", "text": ""}]}"""
+
 STAGE_PROMPTS = {
+    "promo_plan": (PROMO_PLAN_SYSTEM_PROMPT, "promo-plan-v1"),
     "sound_design": (SOUND_DESIGN_SYSTEM_PROMPT, "sound-design-v1"),
     "style_bible": (STYLE_BIBLE_SYSTEM_PROMPT, "style-bible-v1"),
     "timeline": (TIMELINE_SYSTEM_PROMPT, "timeline-v1"),

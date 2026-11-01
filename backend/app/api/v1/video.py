@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/v1", tags=["video"])
 class PlanClips(BaseModel):
     limit: int | None = Field(default=None, ge=1, description="Plan at most this many new clips (the first shots in order)")
     scene_id: UUID | None = None
+    scene_ids: list[UUID] | None = Field(default=None, description="Default: the episode's saved working scenes, else every scene")
     allow_text_to_video: bool = False
     allow_unapproved_keyframes: bool = False
     hold_last_frame: bool = False
@@ -42,6 +43,7 @@ class BudgetUpdate(BaseModel):
 
 class RenderCreate(BaseModel):
     kind: Literal["animatic", "draft", "final"]
+    scene_ids: list[UUID] | None = Field(default=None, description="Render only these scenes; default is the saved working scenes, else the whole episode")
 
 
 def _episode(db: Session, episode_id: UUID) -> dict:
@@ -75,7 +77,7 @@ def plan_video(episode_id: UUID, payload: PlanClips, db: Session = Depends(get_d
     result = video.plan_clips(db, episode_id, limit=payload.limit, scene_id=payload.scene_id,
                               allow_text_to_video=payload.allow_text_to_video,
                               allow_unapproved_keyframes=payload.allow_unapproved_keyframes,
-                              hold_last_frame=payload.hold_last_frame)
+                              hold_last_frame=payload.hold_last_frame, scene_ids=payload.scene_ids)
     db.commit()
     return result
 
@@ -139,7 +141,7 @@ def create_render(episode_id: UUID, payload: RenderCreate, db: Session = Depends
     """Queue an animatic, a draft or the final export. The job runner builds it; poll the render for its status."""
     _episode(db, episode_id)
     try:
-        result = renders.create_render(db, episode_id, payload.kind)
+        result = renders.create_render(db, episode_id, payload.kind, payload.scene_ids)
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error

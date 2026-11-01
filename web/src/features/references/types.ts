@@ -44,6 +44,7 @@ export interface RefCostume {
   name: string
   description: string
   views: RefView[]
+  in_scope?: boolean
 }
 
 export interface RefTarget {
@@ -55,6 +56,10 @@ export interface RefTarget {
   version_number?: number
   views: RefView[]
   costumes?: RefCostume[]
+  /** Set when the series only makes some references; characters carry `character_id`, places and objects `entity_id`. */
+  in_scope?: boolean
+  character_id?: string
+  entity_id?: string
 }
 
 export interface ReferenceOverview {
@@ -65,6 +70,7 @@ export interface ReferenceOverview {
   places: RefTarget[]
   objects: RefTarget[]
   flagged_count: number
+  scope?: { limited: boolean }
 }
 
 export interface GenerateAllResult {
@@ -73,4 +79,5 @@ export interface GenerateAllResult {
   places: number
   objects: number
   requests_created: number
+  left_out_of_scope?: number
 }

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.providers.media_base import ReferenceImage
 from app.services import generation_service as generation
+from app.services.scope_service import scope_filter
 from app.services.asset_store import get_asset, get_storage
 from app.services.consistency_judge import judge_images
 from app.services.style_bible_service import get_approved, negative_block, style_block
@@ -445,21 +446,32 @@ def generate_target(db: Session, series_id: UUID, target_type: str, target_id: U
 
 
 def generate_all(db: Session, series_id: UUID) -> dict:
-    """Request every missing picture for every character, costume, place and object. Safe to repeat: targets that
-    already have a request are skipped. Needs an approved style bible and style anchor. The caller commits."""
+    """Request every missing picture for every in-scope character, costume, place and object (all of them unless the
+    series' reference scope is limited). Safe to repeat: targets that already have a request are skipped. Needs an
+    approved style bible and style anchor. The caller commits."""
     _bible(db, series_id)
     _anchor_asset(db, series_id)
-    counts = {"characters": 0, "costumes": 0, "places": 0, "objects": 0, "requests_created": 0}
+    scope = scope_filter(db, series_id)
+    counts = {"characters": 0, "costumes": 0, "places": 0, "objects": 0, "requests_created": 0, "left_out_of_scope": 0}
     for sheet in _character_sheets(db, series_id):
-        made = generate_target(db, series_id, "character_version", sheet["version_id"])
-        counts["characters"] += 1 if made else 0
-        counts["requests_created"] += len(made)
+        if scope.allows("character", sheet["character_id"]):
+            made = generate_target(db, series_id, "character_version", sheet["version_id"])
+            counts["characters"] += 1 if made else 0
+            counts["requests_created"] += len(made)
+        else:
+            counts["left_out_of_scope"] += 1
         for costume in sheet["costumes"]:
+            if not scope.allows("costume", costume["id"]):
+                counts["left_out_of_scope"] += 1
+                continue
             made = generate_target(db, series_id, "costume", costume["id"])
             counts["costumes"] += 1 if made else 0
             counts["requests_created"] += len(made)
-    for key, entity_type in (("places", "location"), ("objects", "object")):
+    for key, entity_type, kind in (("places", "location", "place"), ("objects", "object", "object")):
         for look in _entity_looks(db, series_id, entity_type):
+            if not scope.allows(kind, look["entity_id"]):
+                counts["left_out_of_scope"] += 1
+                continue
             made = generate_target(db, series_id, "entity_look", look["id"])
             counts[key] += 1 if made else 0
             counts["requests_created"] += len(made)
@@ -487,18 +499,22 @@ def get_overview(db: Session, series_id: UUID) -> dict:
             elif item["target_id"]:
                 requests.setdefault((str(item["target_id"]), (item["params"] or {}).get("view", "")), []).append(item)
     bible = get_approved(db, series_id)
+    scope = scope_filter(db, series_id)
     characters = []
     for sheet in _character_sheets(db, series_id):
         characters.append({
+            "in_scope": scope.allows("character", sheet["character_id"]),
             "target_type": "character_version", "target_id": str(sheet["version_id"]), "character_id": str(sheet["character_id"]),
             "name": sheet["name"], "role": sheet["role"], "version_number": sheet["version_number"],
             "description": sheet["description"], "views": _views_of(requests, sheet["version_id"], CHARACTER_VIEWS),
             "costumes": [{"target_type": "costume", "target_id": str(c["id"]), "name": c["name"], "description": c["description"],
+                          "in_scope": scope.allows("costume", c["id"]),
                           "views": _views_of(requests, c["id"], COSTUME_VIEWS)} for c in sheet["costumes"]]})
 
-    def looks(entity_type: str, views: dict) -> list[dict]:
+    def looks(entity_type: str, kind: str, views: dict) -> list[dict]:
         return [{"target_type": "entity_look", "target_id": str(x["id"]), "entity_id": str(x["entity_id"]), "name": x["name"],
-                 "description": x["description"], "views": _views_of(requests, x["id"], views)}
+                 "description": x["description"], "in_scope": scope.allows(kind, x["entity_id"]),
+                 "views": _views_of(requests, x["id"], views)}
                 for x in _entity_looks(db, series_id, entity_type)]
 
     anchor = get_style_anchor(db, series_id)
@@ -506,7 +522,8 @@ def get_overview(db: Session, series_id: UUID) -> dict:
         "style_bible_approved": bible is not None,
         "style_anchor_asset_id": anchor.asset_id if anchor else None,
         "style_anchors": anchors, "characters": characters,
-        "places": looks("location", PLACE_VIEWS), "objects": looks("object", OBJECT_VIEWS),
+        "places": looks("location", "place", PLACE_VIEWS), "objects": looks("object", "object", OBJECT_VIEWS),
+        "scope": {"limited": scope.limited},
         "flagged_count": len(list_flagged(db, series_id)),
     }
 

@@ -4,6 +4,7 @@ import { NavLink, useParams } from 'react-router-dom'
 import { Badge, Button, Card, Empty, ErrorNote, Field, Loading, Notice, PageHeader } from '../../shared/ui'
 import { formatDuration, plural } from '../../shared/lib/format'
 import { useBreakdownOverview } from '../breakdown/api'
+import { ScenePicker } from '../scope/ScenePicker'
 import { useSeriesId } from '../series/api'
 import { fileUrl, useVideoActions, useVideoBoard } from './api'
 import type { Budget, ClipView, RenderKind, RenderView, ShotRow, TrimState, VideoBoard } from './types'
@@ -39,6 +40,7 @@ export default function VideoPage() {
 }
 
 function EpisodeBoard({ episodeId }: { episodeId: string }) {
+  const seriesId = useSeriesId()
   const board = useVideoBoard(episodeId)
   const actions = useVideoActions(episodeId)
   if (board.isPending) return <Loading />
@@ -61,6 +63,7 @@ function EpisodeBoard({ episodeId }: { episodeId: string }) {
       {errors.map((m, i) => (
         <ErrorNote key={i} error={m.error} />
       ))}
+      <ScenePicker seriesId={seriesId} episodeId={episodeId} />
       <Summary data={data} />
       <BudgetPanel data={data} actions={actions} />
       <div className="video-renders">

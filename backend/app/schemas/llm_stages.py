@@ -276,6 +276,25 @@ class StyleBibleResult(_Loose):
     rationale: str | None = None
 
 
+# ----- promo (teaser / trailer) plan ----------------------------------------
+
+class PromoItemOut(_Loose):
+    type: str = "shot"  # shot | title_card | narration
+    ref: int | None = None  # candidate number, for a shot
+    seconds: float | None = None  # how long it plays (a shot's trim, a card's length)
+    start_offset: float | None = None  # seconds into the shot's clip where the cut starts
+    text: str | None = None  # a title card's text, or narration's words
+    subtitle: str | None = None  # a title card's smaller second line
+    reason: str | None = None
+
+
+class PromoPlanResult(_Loose):
+    hook: str | None = None
+    music_mood: str | None = None
+    items: list[PromoItemOut] = Field(default_factory=list)
+    notes: str | None = None
+
+
 # ----- sound design ----------------------------------------------------------
 
 class SoundEffectOut(_Loose):

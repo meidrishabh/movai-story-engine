@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { formatDuration, plural } from '../../shared/lib/format'
 import { Badge, Button, Card, Empty, ErrorNote, Loading, Notice, PageHeader } from '../../shared/ui'
+import { ScenePicker } from '../scope/ScenePicker'
 import { useSeriesId } from '../series/api'
 import { assetUrl, useEpisodeKeyframes, useKeyframeActions, useKeyframeOverview } from './api'
 import './keyframes.css'
@@ -117,6 +118,7 @@ function EpisodeView({ seriesId, episodeId, styleApproved }: { seriesId: string;
 
   return (
     <>
+      <ScenePicker seriesId={seriesId} episodeId={episodeId} />
       <div className="row row-between">
         <h3>
           Episode {episode.episode_number} <span className="muted">· {episode.title}</span>

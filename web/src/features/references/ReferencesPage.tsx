@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { env } from '../../config/env'
 import { Badge, Button, Card, Empty, ErrorNote, Loading, Notice, PageHeader } from '../../shared/ui'
+import { ReferenceScopePanel } from '../scope/ReferenceScopePanel'
 import { useSeriesId } from '../series/api'
 import { useReferenceActions, useReferences } from './api'
 import './references.css'
@@ -63,8 +64,10 @@ export default function ReferencesPage() {
           {actions.generateAll.data.requests_created === 0
             ? 'Everything is already requested.'
             : `Requested ${actions.generateAll.data.requests_created} pictures. Other views of a subject start once you approve its first one.`}
+          {!!actions.generateAll.data.left_out_of_scope && ` ${actions.generateAll.data.left_out_of_scope} left out by your selection.`}
         </Notice>
       )}
+      <ReferenceScopePanel seriesId={seriesId} data={data} />
       {!data.style_bible_approved && (
         <Notice tone="warn">
           The style bible is not approved yet. <Link to="../style">Approve it first</Link>: every picture is made from it.

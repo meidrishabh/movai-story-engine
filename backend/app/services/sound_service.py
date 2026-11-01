@@ -29,6 +29,7 @@ from app.media.runner import run as run_ffmpeg
 from app.providers.llm_base import LLMAnalysisRequest, LLMProviderError
 from app.providers.llm_factory import get_llm_provider
 from app.schemas.llm_stages import SoundDesignResult
+from app.services.scope_service import resolve_scenes
 from app.services import generation_service as generation
 from app.services import style_bible_service, voice_cast_service
 from app.services.asset_store import asset_summary, delete_asset, get_asset, get_storage, save_asset, storage_root
@@ -203,10 +204,11 @@ def _desired(db: Session, episode: dict, scenes: list[dict], designed: dict[int,
     return out
 
 
-def _reconcile(db: Session, episode: dict, desired: list[dict], replace: set[str]) -> dict:
+def _reconcile(db: Session, episode: dict, desired: list[dict], replace: set[str], scope: set[str] | None = None) -> dict:
     """Insert new cues, update changed ones (clearing their old audio), delete cues that are gone. A cue whose
-    text did not change keeps its audio and its requests."""
-    existing = {(str(c["scene_id"]), c["cue_type"], c["position"]): c for c in _cues(db, episode["id"]) if c["role"] == "scene"}
+    text did not change keeps its audio and its requests. With `scope` (scene ids), cues of other scenes are left alone."""
+    existing = {(str(c["scene_id"]), c["cue_type"], c["position"]): c for c in _cues(db, episode["id"])
+                if c["role"] == "scene" and (scope is None or str(c["scene_id"]) in scope)}
     seen, added, changed = set(), 0, 0
     for item in desired:
         key = (str(item["scene"]["id"]), item["cue_type"], item["position"])
@@ -262,17 +264,29 @@ def _ensure_theme(db: Session, series_id: UUID) -> dict:
                            {"s": str(series_id)}).mappings().one())
 
 
-def design_sound(db: Session, episode_id: UUID, client: LLMStageClient | None = None, redesign: bool = False) -> dict:
-    """Make the cue list for an episode. Dialogue is always re-read from the breakdown; the designed kinds (ambience,
-    music, effects, narration) are written by the LLM once and kept unless `redesign`. The caller commits."""
+def _in_scenes(scenes: list[dict], scene_ids: list | None) -> list[dict]:
+    if not scene_ids:
+        return scenes
+    wanted = {str(s) for s in scene_ids}
+    return [s for s in scenes if str(s["id"]) in wanted]
+
+
+def design_sound(db: Session, episode_id: UUID, client: LLMStageClient | None = None, redesign: bool = False,
+                 scene_ids: list | None = None) -> dict:
+    """Make the cue list for an episode, or only for `scene_ids` (cheaper: the LLM design covers just those scenes).
+    Dialogue is always re-read from the breakdown; the designed kinds (ambience, music, effects, narration) are written
+    by the LLM once per scene and kept unless `redesign`. The caller commits."""
     episode = _episode(db, episode_id)
-    scenes = load_scenes(db, episode_id)
-    if not scenes or not any(s["shots"] for s in scenes):
+    all_scenes = load_scenes(db, episode_id)
+    if not all_scenes or not any(s["shots"] for s in all_scenes):
         raise PermanentJobError("The episode has no scenes and shots yet; break it down first")
-    designed_before = any(c["cue_type"] in DESIGNED for c in _cues(db, episode_id))
+    scenes = _in_scenes(all_scenes, scene_ids)
+    scope = {str(s["id"]) for s in scenes} if scene_ids else None
+    designed_before = any(c["cue_type"] in DESIGNED and (scope is None or str(c["scene_id"]) in scope)
+                          for c in _cues(db, episode_id))
     designed = None if designed_before and not redesign else _run_design(db, episode, scenes, client)
     replace = {"dialogue"} | (set(DESIGNED) if designed is not None else set())
-    counts = _reconcile(db, episode, _desired(db, episode, scenes, designed), replace)
+    counts = _reconcile(db, episode, _desired(db, episode, scenes, designed), replace, scope)
     _ensure_theme(db, episode["series_id"])
     db.flush()
     relayout(db, episode_id)
@@ -428,12 +442,15 @@ def request_cues(db: Session, series_id: UUID, cues: list[dict]) -> dict:
 
 
 def generate_episode_sound(db: Session, episode_id: UUID, client: LLMStageClient | None = None,
-                           redesign: bool = False) -> dict:
-    """The job body: design the cues, then queue a request for each. Idempotent. Commits."""
+                           redesign: bool = False, scene_ids: list | None = None) -> dict:
+    """The job body: design the cues (for `scene_ids` only, when given), then queue a request for each. Idempotent. Commits."""
     episode = _episode(db, episode_id)
-    design = design_sound(db, episode_id, client, redesign)
+    design = design_sound(db, episode_id, client, redesign, scene_ids)
     db.commit()
     cues = _cues(db, episode_id)
+    if scene_ids:
+        wanted = {str(s) for s in scene_ids}
+        cues = [c for c in cues if str(c["scene_id"]) in wanted]
     theme = db.execute(text("SELECT * FROM sound_cues WHERE series_id = :s AND role = 'theme'"),
                        {"s": str(episode["series_id"])}).mappings().first()
     result = request_cues(db, episode["series_id"], cues + ([dict(theme)] if theme else []))
@@ -441,8 +458,10 @@ def generate_episode_sound(db: Session, episode_id: UUID, client: LLMStageClient
     return {"cues": len(cues), **design, **result}
 
 
-def queue_sound_job(db: Session, episode_id: UUID, redesign: bool = False) -> dict:
-    """Queue the bulk job. Raises ValueError when one is already queued or running. The caller commits."""
+def queue_sound_job(db: Session, episode_id: UUID, redesign: bool = False, scene_ids: list | None = None) -> dict:
+    """Queue the bulk job for the chosen scenes (explicit, else the episode's saved working scenes, else every scene).
+    Raises ValueError when one is already queued or running. The caller commits."""
+    scene_ids = resolve_scenes(db, episode_id, scene_ids)
     active = db.execute(
         text("""SELECT id FROM generation_jobs WHERE job_type = 'sound_generation' AND status IN ('queued', 'running')
                 AND request_metadata ->> 'sound_episode_id' = :e"""), {"e": str(episode_id)}).scalar()
@@ -451,7 +470,8 @@ def queue_sound_job(db: Session, episode_id: UUID, redesign: bool = False) -> di
     row = db.execute(
         text("""INSERT INTO generation_jobs (job_type, status, provider, request_metadata)
                 VALUES ('sound_generation', 'queued', 'media', CAST(:m AS jsonb)) RETURNING id, job_type, status, created_at"""),
-        {"m": json.dumps({"sound_episode_id": str(episode_id), "redesign": bool(redesign)})}).mappings().one()
+        {"m": json.dumps({"sound_episode_id": str(episode_id), "redesign": bool(redesign),
+                          "scene_ids": scene_ids or []})}).mappings().one()
     return dict(row)
 
 
@@ -554,13 +574,16 @@ def _cue_view(cue: dict, request: dict | None, asset: dict | None) -> dict:
             "audio": asset_summary(asset)}
 
 
-def episode_board(db: Session, episode_id: UUID) -> dict:
-    """Everything the sound board shows. Reads finished audio first, so timings are current."""
+def episode_board(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict:
+    """Everything the sound board shows (the working scenes only, when some are chosen). Reads finished audio first,
+    so timings are current."""
     episode = _episode(db, episode_id)
     sync_episode(db, episode_id)
     db.commit()
-    scenes = load_scenes(db, episode_id)
-    cues = _cues(db, episode_id)
+    working = resolve_scenes(db, episode_id, scene_ids)
+    scenes = _in_scenes(load_scenes(db, episode_id), working)
+    shown = {str(s["id"]) for s in scenes}
+    cues = [c for c in _cues(db, episode_id) if working is None or str(c["scene_id"]) in shown]
     theme = db.execute(text("SELECT * FROM sound_cues WHERE series_id = :s AND role = 'theme'"),
                        {"s": str(episode["series_id"])}).mappings().first()
     all_cues = cues + ([dict(theme)] if theme else [])
@@ -574,8 +597,10 @@ def episode_board(db: Session, episode_id: UUID) -> dict:
     def view(cue: dict) -> dict:
         return _cue_view(cue, current.get(str(cue["id"])), assets.get(str(cue["audio_asset_id"])) if cue["audio_asset_id"] else None)
 
+    shown_shots = {str(sh["id"]) for sc in scenes for sh in sc["shots"]}
     fits = {str(r["shot_id"]): r for r in db.execute(
-        text("SELECT * FROM sound_shot_fits WHERE episode_id = :e"), {"e": str(episode_id)}).mappings()}
+        text("SELECT * FROM sound_shot_fits WHERE episode_id = :e"), {"e": str(episode_id)}).mappings()
+        if str(r["shot_id"]) in shown_shots}
     by_scene: dict[str, list[dict]] = {}
     for cue in cues:
         by_scene.setdefault(str(cue["scene_id"]), []).append(cue)
@@ -619,7 +644,7 @@ def episode_board(db: Session, episode_id: UUID) -> dict:
     return {"episode": {"id": str(episode["id"]), "episode_number": episode["episode_number"], "title": episode["title"]},
             "job": dict(job) if job else None, "theme": view(dict(theme)) if theme else None, "scenes": out_scenes,
             "counts": counts, "overflow_shots": sum(1 for f in fits.values() if f["status"] == "overflow"),
-            "warnings": warnings, "subtitles": subtitles}
+            "warnings": warnings, "subtitles": subtitles, "working_scene_ids": working}
 
 
 # ----- the audio plan for the video step ---------------------------------------------------------------------------
@@ -647,7 +672,7 @@ def _slice(source: Path, start: float, length: float, folder: Path) -> Path:
     return out
 
 
-def build_audio_plan(db: Session, episode_id: UUID) -> dict[str, dict]:
+def build_audio_plan(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict[str, dict]:
     """`{shot_id: {"audio_tracks": [...], "subtitles": [...]}}`, the shape `app.media.assemble_episode` takes per shot.
 
     audio_tracks: {path, start_seconds, gain, role: dialogue|music|sfx, cue_id, cue_type}; start_seconds is relative to
@@ -658,7 +683,7 @@ def build_audio_plan(db: Session, episode_id: UUID) -> dict[str, dict]:
     episode = _episode(db, episode_id)
     sync_episode(db, episode_id)
     db.commit()
-    scenes = load_scenes(db, episode_id)
+    scenes = _in_scenes(load_scenes(db, episode_id), scene_ids)  # a partial episode only plans (and slices) its own scenes
     cues = _cues(db, episode_id)
     theme = db.execute(text("SELECT * FROM sound_cues WHERE series_id = :s AND role = 'theme'"),
                        {"s": str(episode["series_id"])}).mappings().first()
@@ -740,12 +765,13 @@ def subtitle_files(db: Session, episode_id: UUID) -> dict:
             "shots": sum(1 for r in rows if r["metadata"].get("scope") == "shot")}
 
 
-def build_subtitles(db: Session, episode_id: UUID) -> dict:
+def build_subtitles(db: Session, episode_id: UUID, scene_ids: list | None = None) -> dict:
     """Write SRT files per shot, scene and episode from the audio plan and store them as assets, replacing the
     previous set. The caller commits."""
     episode = _episode(db, episode_id)
-    plan = build_audio_plan(db, episode_id)
-    scenes = load_scenes(db, episode_id)
+    scene_ids = resolve_scenes(db, episode_id, scene_ids)
+    plan = build_audio_plan(db, episode_id, scene_ids)
+    scenes = _in_scenes(load_scenes(db, episode_id), scene_ids)
     for row in db.execute(text("SELECT id FROM assets WHERE kind = 'subtitle' AND metadata ->> 'episode_id' = :e"),
                           {"e": str(episode_id)}).mappings().all():
         delete_asset(db, row["id"])
